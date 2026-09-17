@@ -171,6 +171,8 @@ pub struct TunnelConfig {
     pub ech_config_list: Option<Vec<u8>>,
     pub noize: NoizeConfig,
     pub tls_curve_preset: crate::TlsCurvePreset,
+    /// QUIC congestion control algorithm; `None` keeps quiche's CUBIC default.
+    pub cc_algorithm: Option<String>,
     pub local_ipv4: Ipv4Addr,
     pub quiet: bool,
     /// Whether this tunnel may call [crate::ffi::mark_ready] on its own
@@ -372,6 +374,7 @@ pub async fn run(
         cert_pem: &cfg.cert_pem,
         key_pem: &cfg.key_pem,
         curve_preset: cfg.tls_curve_preset,
+        cc_algorithm: cfg.cc_algorithm.as_deref(),
         pin_endpoint: false,
         expected_pins: &[],
     })?;
@@ -996,6 +999,7 @@ pub async fn verify_masque(p: &VerifyParams) -> Result<Duration> {
         cert_pem: &p.cert_pem,
         key_pem: &p.key_pem,
         curve_preset: p.tls_curve_preset,
+        cc_algorithm: None,
         pin_endpoint: false,
         expected_pins: &[],
     })?;

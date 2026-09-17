@@ -44,6 +44,8 @@ MASQUE transport:
   --fragment               fragment the TLS ClientHello on the HTTP/2 transport
   --fragment-size <n|a-b>  fragment chunk size in bytes (default 16-32)
   --fragment-delay <n|a-b> delay between fragments in ms (default 2-10)
+  --cc <algo>              QUIC congestion control: cubic (default), reno, bbr
+  --bbr                    shortcut for --cc bbr (BBRv2 from gcongestion)
 
 WireGuard:
   --keepalive <n>          persistent keepalive interval in seconds (default 5)
@@ -154,6 +156,8 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<()> {
 
             "--h2" | "--http2" => set("AETHER_MASQUE_HTTP2", "1"),
             "--h2-peer" => set("AETHER_MASQUE_H2_PEER", next_value!()),
+            "--cc" => set("AETHER_CC", next_value!()),
+            "--bbr" => set("AETHER_CC", "bbr"),
             "--ech" => set("AETHER_ECH", next_value!()),
             "--no-data-check" => {
                 set("AETHER_MASQUE_NO_DATA_CHECK", "1");

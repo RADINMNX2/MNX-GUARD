@@ -32,6 +32,9 @@ pub struct TlsParams<'a> {
     pub cert_pem: &'a [u8],
     pub key_pem: &'a [u8],
     pub curve_preset: crate::TlsCurvePreset,
+    /// QUIC congestion control algorithm name ("cubic", "reno", "bbr").
+    /// `None` keeps quiche's default (CUBIC).
+    pub cc_algorithm: Option<&'a str>,
     pub pin_endpoint: bool,
     /// SHA-256 SPKI hashes of expected server certificates for pin-based verification.
     /// When non-empty and `pin_endpoint` is true, the server cert's SPKI hash is checked
@@ -188,6 +191,18 @@ pub fn build_config(params: &TlsParams) -> Result<quiche::Config> {
     config.set_initial_max_streams_uni(100);
     config.set_disable_active_migration(true);
     config.enable_dgram(true, 65536, 65536);
+
+    // Congestion control. quiche defaults to CUBIC; this vendored copy also
+    // carries the BBRv2 ("bbr"/"bbr2") recovery from the gcongestion branch.
+    // An absent or rejected name leaves the default in place.
+    if let Some(name) = params.cc_algorithm {
+        match config.set_cc_algorithm_name(name) {
+            Ok(()) => log::info!("quic congestion control: {name}"),
+            Err(e) => log::warn!(
+                "quic congestion control {name:?} rejected ({e:?}); keeping default"
+            ),
+        }
+    }
 
     Ok(config)
 }

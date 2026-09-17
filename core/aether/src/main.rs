@@ -44,6 +44,9 @@ pub struct StartOptions {
     pub endpoint_discovery: EndpointDiscovery,
     pub masque_transport: MasqueTransport,
     pub tls_curve_preset: TlsCurvePreset,
+    /// QUIC congestion control algorithm for the MASQUE/HTTP3 transport.
+    /// `None` keeps quiche's default (CUBIC). Accepted: "cubic", "reno", "bbr".
+    pub cc_algorithm: Option<String>,
     pub wireguard_data_check: bool,
     pub tun_fd: Option<i32>,
     pub log_level: Option<String>,
@@ -150,6 +153,10 @@ impl StartOptions {
             endpoint_discovery: EndpointDiscovery::Cache,
             masque_transport: MasqueTransport::H3,
             tls_curve_preset: TlsCurvePreset::Chrome,
+            cc_algorithm: std::env::var("AETHER_CC")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             wireguard_data_check: true,
             tun_fd: None,
             log_level: None,
@@ -1823,6 +1830,7 @@ async fn run_masque_tunnel(
         ech_config_list: ech,
         noize: noize_config(options.masque_profile()),
         tls_curve_preset: options.tls_curve_preset,
+        cc_algorithm: options.cc_algorithm.clone(),
         local_ipv4: parse_local_v4(&identity.ipv4),
         quiet: false,
         // Plain single-hop MASQUE: this tunnel IS the session, it announces
@@ -3184,6 +3192,7 @@ async fn establish_masque(
             ech_config_list: ech,
             noize: noize_config(options.masque_profile()),
             tls_curve_preset: options.tls_curve_preset,
+            cc_algorithm: options.cc_algorithm.clone(),
             local_ipv4: parse_local_v4(&identity.ipv4),
             quiet: false,
             // Same as the h2 branch above: a MIM hop stays silent.

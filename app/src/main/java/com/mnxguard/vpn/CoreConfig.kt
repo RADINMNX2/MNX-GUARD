@@ -170,6 +170,11 @@ object CoreConfig {
             putOpt("obfuscation_parameters", manualObfuscation.takeIf { it.length() > 0 }?.toString())
             put("retry_obfuscation_profiles", prefs.getBoolean("retry_obfuscation_profiles", true))
             put("tls_curve_preset", text("tls_curve_preset", "chrome"))
+            // QUIC congestion control for the MASQUE/HTTP3 transport. Defaults to
+            // BBRv2, which holds up better than CUBIC on lossy mobile links; a
+            // preference of "cubic" restores the old behaviour. Ignored by the
+            // HTTP/2 and WireGuard transports, which do not use QUIC.
+            put("cc_algorithm", text("cc_algorithm", "bbr"))
             put("wireguard_data_check", prefs.getBoolean("wireguard_data_check", true))
             put("log_level", text("log_level", "info"))
             put("perf_profile", text("perf_profile", "auto"))

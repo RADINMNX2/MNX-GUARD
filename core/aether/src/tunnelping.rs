@@ -156,6 +156,7 @@ pub async fn masque_http_ping(p: &MasquePingParams, timeout: Duration) -> Result
                 ech_config_list: None,
                 noize: p.noize.clone(),
                 tls_curve_preset: crate::TlsCurvePreset::Chrome,
+                cc_algorithm: None,
                 local_ipv4: p.local_ipv4,
                 quiet: true,
                 // Same defaults as the real tunnel: full datagram, bait on —
