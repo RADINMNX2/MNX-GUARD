@@ -416,6 +416,12 @@ pub async fn run(
     let mut probe_interval = tokio::time::interval(Duration::from_millis(700));
     probe_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    // Live transport health for the optimizer dashboard. Sampling on its own
+    // interval (rather than inside the data path) keeps the hot loops free of
+    // extra work and gives the app a steady ~1 Hz heartbeat.
+    let mut metrics_interval = tokio::time::interval(Duration::from_secs(1));
+    metrics_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     let mut ctrl_open = true;
     let mut outbound_open = true;
 
@@ -455,6 +461,24 @@ pub async fn run(
                     if let Err(e) = conn.send_ack_eliciting() {
                         log::debug!("keepalive ping failed: {e}");
                     }
+                }
+            }
+
+            _ = metrics_interval.tick() => {
+                if conn.is_established() {
+                    let stats = conn.stats();
+                    let (rtt_ms, cwnd) = match conn.path_stats().next() {
+                        Some(path) => (path.rtt.as_secs_f64() * 1000.0, path.cwnd as u64),
+                        None => (0.0, 0),
+                    };
+                    crate::ffi::emit_metrics(
+                        rtt_ms,
+                        cwnd,
+                        stats.lost as u64,
+                        stats.sent_bytes,
+                        stats.recv_bytes,
+                        stats.lost_bytes,
+                    );
                 }
             }
 

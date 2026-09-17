@@ -170,6 +170,15 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
     private var lastTrafficSampleMs = 0L
     private var currentTx = 0L
     private var currentRx = 0L
+    // Live transport health pushed by the core's ~1 Hz "metrics" event. Kept
+    // separate from the traffic counters: those are per-session deltas, these
+    // are instantaneous QUIC state (RTT, congestion window, loss).
+    private var metricsRttMs = -1.0
+    private var metricsCwnd = 0L
+    private var metricsLost = 0L
+    private var metricsSentBytes = 0L
+    private var metricsRecvBytes = 0L
+    private var metricsLostBytes = 0L
     private var prevTx = 0L
     private var prevRx = 0L
     private var prevSpeedSampleMs = 0L
@@ -2166,6 +2175,14 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
                     currentTx = tx
                     currentRx = rx
                     updateTrafficNotification(tx, rx)
+                }
+                "metrics" -> {
+                    metricsRttMs = event.optDouble("rtt_ms", -1.0)
+                    metricsCwnd = event.optLong("cwnd", 0)
+                    metricsLost = event.optLong("lost", 0)
+                    metricsSentBytes = event.optLong("sent_bytes", 0)
+                    metricsRecvBytes = event.optLong("recv_bytes", 0)
+                    metricsLostBytes = event.optLong("lost_bytes", 0)
                 }
                 // The core measured the exit address from inside the tunnel. This
                 // is the authoritative source: the app's own HTTP lookup leaves

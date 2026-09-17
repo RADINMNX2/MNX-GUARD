@@ -39,6 +39,20 @@ pub enum Event {
     Log {
         message: String,
     },
+    /// Live transport health sampled from the QUIC connection at roughly 1 Hz.
+    ///
+    /// `rtt_ms` and `cwnd` come from the first active path; the byte counters
+    /// are connection totals. Emitted only while the connection is established,
+    /// so the app can drive a live optimizer dashboard without adding any work
+    /// to the packet data path itself.
+    Metrics {
+        rtt_ms: f64,
+        cwnd: u64,
+        lost: u64,
+        sent_bytes: u64,
+        recv_bytes: u64,
+        lost_bytes: u64,
+    },
 }
 
 pub type EventCallback = unsafe extern "C" fn(json: *const c_char);
@@ -86,6 +100,24 @@ pub(crate) fn emit_traffic(tx: u64, rx: u64) {
 
 pub(crate) fn emit_exit_ip(ip: String) {
     emit_event(Event::ExitIp { ip });
+}
+
+pub(crate) fn emit_metrics(
+    rtt_ms: f64,
+    cwnd: u64,
+    lost: u64,
+    sent_bytes: u64,
+    recv_bytes: u64,
+    lost_bytes: u64,
+) {
+    emit_event(Event::Metrics {
+        rtt_ms,
+        cwnd,
+        lost,
+        sent_bytes,
+        recv_bytes,
+        lost_bytes,
+    });
 }
 
 #[derive(Deserialize)]
