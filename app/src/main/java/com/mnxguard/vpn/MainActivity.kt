@@ -64,6 +64,9 @@ class MainActivity : Activity() {
     private lateinit var tileDown: MetricTile
     private lateinit var tileUp: MetricTile
     private lateinit var tileSpeed: MetricTile
+    private lateinit var tileLatency: MetricTile
+    private lateinit var tileWindow: MetricTile
+    private lateinit var tileLoss: MetricTile
     private lateinit var exitNodeCard: ExitNodeCard
     private lateinit var chainCard: ChainModeCard
 
@@ -287,6 +290,10 @@ class MainActivity : Activity() {
     // Latest QUIC round-trip time reported by the core's "metrics" event, in ms.
     // -1 until the first sample. Feeds the latency chip live between probes.
     @Volatile private var coreRttMs = -1.0
+    // Congestion window and cumulative lost bytes from the same metrics event,
+    // shown on the second tile row. 0 until the first sample arrives.
+    @Volatile private var coreCwnd = 0L
+    @Volatile private var coreLostBytes = 0L
     /**
      * Connection verification. STATUS_CONNECTED from the service only means
      * "the transport handshake finished" — on MCI/Hamrah-e-Aval a WireGuard
@@ -427,6 +434,8 @@ class MainActivity : Activity() {
                     coreRttMs = rtt
                     chipLatency.text = Strings.tf("Latency %s ms", rtt.toInt())
                 }
+                coreCwnd = intent.getLongExtra(MnxGuardVpnService.EXTRA_METRICS_CWND, coreCwnd)
+                coreLostBytes = intent.getLongExtra(MnxGuardVpnService.EXTRA_METRICS_LOST_BYTES, coreLostBytes)
                 renderTrafficMonitor()
                 renderHomeMetrics()
                 return
@@ -633,6 +642,20 @@ class MainActivity : Activity() {
         tileSpeed = MetricTile(
             this, palette, Strings.t("SPEED"),
             palette.amber, Sculpt.lighten(palette.amber, 0.30f), palette.amberText,
+        ) { openTrafficMonitorScreen() }
+        // Second row: the core's live transport health, same tile language as the
+        // traffic row above. RTT is brand teal, cwnd the "up" neon, loss danger.
+        tileLatency = MetricTile(
+            this, palette, Strings.t("RTT"),
+            palette.primary, Sculpt.lighten(palette.primary, 0.30f), palette.primaryText,
+        ) { openTrafficMonitorScreen() }
+        tileWindow = MetricTile(
+            this, palette, Strings.t("WINDOW"),
+            palette.connected, Sculpt.lighten(palette.connected, 0.30f), palette.connectedText,
+        ) { openTrafficMonitorScreen() }
+        tileLoss = MetricTile(
+            this, palette, Strings.t("LOST"),
+            palette.danger, Sculpt.lighten(palette.danger, 0.30f), palette.dangerText,
         ) { openTrafficMonitorScreen() }
         exitNodeCard = ExitNodeCard(this, palette) { refreshPublicIp() }
         chainCard = ChainModeCard(this, palette) { armed -> setChainArmed(armed) }
@@ -1435,6 +1458,20 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = dp(14) })
+
+        // Live transport dashboard: RTT / congestion window / lost bytes, fed by
+        // the core's ~1 Hz metrics event. Same three-across geometry as the row
+        // above so the two read as one grid.
+        val metricsTiles = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(tileLatency, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
+            addView(tileWindow, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
+            addView(tileLoss, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        addView(metricsTiles, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(9) })
 
         addView(exitNodeCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -6123,6 +6160,15 @@ class MainActivity : Activity() {
         tileDown.resetBars()
         tileUp.resetBars()
         tileSpeed.resetBars()
+        tileLatency.setValue("—", "MS")
+        tileWindow.setValue("0", "B")
+        tileLoss.setValue("0", "B")
+        tileLatency.resetBars()
+        tileWindow.resetBars()
+        tileLoss.resetBars()
+        coreRttMs = -1.0
+        coreCwnd = 0L
+        coreLostBytes = 0L
         exitNodeCard.resetSpark()
     }
 
@@ -6166,6 +6212,23 @@ class MainActivity : Activity() {
         tileUp.push((trafficSpeedTx / 1_024.0 / ceiling).toFloat().coerceIn(0.04f, 1f))
         tileSpeed.push((kbPerSecond / ceiling).toFloat().coerceIn(0.04f, 1f))
         exitNodeCard.pushSample((kbPerSecond / ceiling).toFloat().coerceIn(0.04f, 1f))
+
+        // Live transport dashboard. Bars are relative to a healthy full scale so
+        // a quiet-but-up tunnel reads as a low flat line, not as dead.
+        if (coreRttMs > 0.0) {
+            tileLatency.setValue(coreRttMs.toInt().toString(), "MS")
+            tileLatency.push((coreRttMs / 500.0).toFloat().coerceIn(0.04f, 1f))
+        }
+        if (coreCwnd > 0L) {
+            val (cwValue, cwUnit) = scaleBytes(coreCwnd)
+            tileWindow.setValue(cwValue, cwUnit)
+            tileWindow.push((coreCwnd / 1_048_576.0).toFloat().coerceIn(0.04f, 1f))
+        }
+        if (coreLostBytes > 0L) {
+            val (lossValue, lossUnit) = scaleBytes(coreLostBytes)
+            tileLoss.setValue(lossValue, lossUnit)
+            tileLoss.push((coreLostBytes / 65_536.0).toFloat().coerceIn(0.04f, 1f))
+        }
     }
 
     private fun setModeEnabled(enabled: Boolean) {
