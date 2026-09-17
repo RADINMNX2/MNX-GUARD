@@ -63,3 +63,9 @@ keystore.jks
 keystore.env
 *.env
 make-release.py
+
+# Generated Aether shared library (built by Gradle preBuild)
+app/src/main/jniLibs/**/libaether.so
+
+# Stray GitHub CLI downloads
+gh_*/
