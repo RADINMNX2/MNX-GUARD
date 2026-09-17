@@ -720,8 +720,13 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
         const val EXTRA_TRAFFIC_RX = "traffic_rx"
         const val EXTRA_TRAFFIC_SPEED_TX = "traffic_speed_tx"
         const val EXTRA_TRAFFIC_SPEED_RX = "traffic_speed_rx"
-        const val EXTRA_TRAFFIC_MONTH_TX = "traffic_month_tx"
-        const val EXTRA_TRAFFIC_MONTH_RX = "traffic_month_rx"
+    const val EXTRA_TRAFFIC_MONTH_TX = "traffic_month_tx"
+    const val EXTRA_TRAFFIC_MONTH_RX = "traffic_month_rx"
+    // Live QUIC transport metrics from the core's "metrics" event, carried on the
+    // same periodic traffic broadcast so the UI has one place to read them.
+    const val EXTRA_METRICS_RTT_MS = "metrics_rtt_ms"
+    const val EXTRA_METRICS_CWND = "metrics_cwnd"
+    const val EXTRA_METRICS_LOST_BYTES = "metrics_lost_bytes"
         const val EXTRA_NOTIFICATION_IP = "notification_ip"
         const val EXTRA_NOTIFICATION_PING = "notification_ping"
 
@@ -4583,7 +4588,10 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
             .putExtra(EXTRA_TRAFFIC_SPEED_TX, currentSpeedTx)
             .putExtra(EXTRA_TRAFFIC_SPEED_RX, currentSpeedRx)
             .putExtra(EXTRA_TRAFFIC_MONTH_TX, monthTx)
-            .putExtra(EXTRA_TRAFFIC_MONTH_RX, monthRx))
+            .putExtra(EXTRA_TRAFFIC_MONTH_RX, monthRx)
+            .putExtra(EXTRA_METRICS_RTT_MS, metricsRttMs)
+            .putExtra(EXTRA_METRICS_CWND, metricsCwnd)
+            .putExtra(EXTRA_METRICS_LOST_BYTES, metricsLostBytes))
     }
 
     /**
