@@ -284,6 +284,9 @@ class MainActivity : Activity() {
     @Volatile private var cachedUserApps: List<ApplicationInfo>? = null
     private var latencyRequest = 0
     @Volatile private var pingInFlight = false
+    // Latest QUIC round-trip time reported by the core's "metrics" event, in ms.
+    // -1 until the first sample. Feeds the latency chip live between probes.
+    @Volatile private var coreRttMs = -1.0
     /**
      * Connection verification. STATUS_CONNECTED from the service only means
      * "the transport handshake finished" — on MCI/Hamrah-e-Aval a WireGuard
@@ -415,6 +418,15 @@ class MainActivity : Activity() {
                 trafficSpeedRx = intent.getLongExtra(MnxGuardVpnService.EXTRA_TRAFFIC_SPEED_RX, 0)
                 trafficMonthTx = intent.getLongExtra(MnxGuardVpnService.EXTRA_TRAFFIC_MONTH_TX, 0)
                 trafficMonthRx = intent.getLongExtra(MnxGuardVpnService.EXTRA_TRAFFIC_MONTH_RX, 0)
+                // The core samples QUIC RTT every ~1s, so prefer it for the latency
+                // chip while connected: it measures the tunnel continuously instead
+                // of only at connect time, and the periodic probe still overwrites it
+                // when it runs.
+                val rtt = intent.getDoubleExtra(MnxGuardVpnService.EXTRA_METRICS_RTT_MS, -1.0)
+                if (rtt > 0.0 && isTunnelActive()) {
+                    coreRttMs = rtt
+                    chipLatency.text = Strings.tf("Latency %s ms", rtt.toInt())
+                }
                 renderTrafficMonitor()
                 renderHomeMetrics()
                 return
