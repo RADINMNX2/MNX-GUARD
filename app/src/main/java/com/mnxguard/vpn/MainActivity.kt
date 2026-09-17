@@ -3543,6 +3543,10 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(26) })
         addControl(Strings.t("Manual endpoint"), manualEndpoint() ?: Strings.t("Automatic")) { editManualEndpoint() }
         addControl(Strings.t("Gateway cache"), defaultEndpointDiscovery().label) { manageGatewayCache() }
+        lateinit var dnsRow: OrbitSettingsRow
+        dnsRow = addControl(Strings.t("DNS servers"), dnsSummary()) {
+            chooseDnsServers { dnsRow.setValue(dnsSummary()) }
+        }
         content.addView(sectionLabel(Strings.t("TROUBLESHOOTING")), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = dp(26) })
@@ -3558,10 +3562,10 @@ class MainActivity : Activity() {
         // The "VPN CORE" section is gone. It held DNS resolvers, Destination
         // routing, and Zero Trust — all three are proxy-mode features:
         //
-        //   * DNS resolvers   -> socks.rs::resolver_addresses(), and socks::serve
-        //                        never runs in VPN mode (tun::bridge takes its
-        //                        place). The device's real resolvers come from
-        //                        applyDns() on the Builder.
+        //   * DNS resolvers   -> surfaced again under ROUTING: VPN mode now
+        //                        honours them, because applyDns() adds the
+        //                        user's primary/secondary to the Builder before
+        //                        the public fallbacks.
         //   * Dest. routing   -> RuleSet::from_env(), read only from socks.rs.
         //   * Zero Trust      -> Cloudflare organization accounts, unused here.
         //
@@ -4504,6 +4508,155 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { leftMargin = dp(10) })
         sheet.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(16) })
         dialog.setContentView(FrameLayout(this).apply {
+            setPadding(dp(16), 0, dp(16), dp(16))
+            addView(sheet)
+        })
+        dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.62f)
+            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.BOTTOM)
+        }
+    }
+
+    /**
+     * The user's chosen DNS resolvers, primary first.
+     *
+     * Stored as the same comma-separated `dns_servers` string the core already
+     * reads (socks.rs for proxy mode), so one preference drives both the proxy
+     * resolver list and the TUN's addDnsServer() list in VPN mode.
+     */
+    private fun dnsServers(): List<String> = preferences()
+        .getString(DNS_SERVERS, null)
+        ?.split(',', ';', ' ', '\n')
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+        ?.distinct()
+        ?: emptyList()
+
+    private fun dnsSummary(): String {
+        val servers = dnsServers()
+        return if (servers.isEmpty()) Strings.t("Automatic") else servers.joinToString(" · ")
+    }
+
+    /**
+     * Accepts a bare numeric IPv4 or IPv6 address (no port). InetAddress must
+     * not be used here: on a hostname it would block the settings screen with a
+     * DNS lookup.
+     */
+    private fun isValidDnsHost(value: String): Boolean {
+        Regex("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$").matchEntire(value)?.let { match ->
+            return (1..4).all { match.groupValues[it].toInt() in 0..255 }
+        }
+        if (value.contains(':')) {
+            return Regex("^[0-9a-fA-F:]+$").matches(value) && value.count { it == ':' } in 2..8
+        }
+        return false
+    }
+
+    /**
+     * Modern bottom-sheet for choosing primary/secondary DNS resolvers.
+     *
+     * Presets are one tap and fill both fields. "Automatic" clears the override
+     * so the system/carrier resolvers are used again.
+     */
+    private fun chooseDnsServers(after: (() -> Unit)? = null) {
+        val dialog = Dialog(this).apply { requestWindowFeature(Window.FEATURE_NO_TITLE) }
+        val existing = dnsServers()
+        val primaryField = settingsField(existing.getOrNull(0).orEmpty(), "1.1.1.1")
+        val secondaryField = settingsField(existing.getOrNull(1).orEmpty(), "8.8.8.8")
+        listOf(primaryField, secondaryField).forEach {
+            it.setSingleLine(true)
+            it.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        }
+
+        val sheet = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            background = roundedBackground(SURFACE, 28, SURFACE)
+        }
+        sheet.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(createHeaderBackButton { dialog.dismiss() }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(label(Strings.t("DNS servers"), 22f, INK, TypefaceStyle.MEDIUM))
+        })
+        sheet.addView(label(
+            Strings.t("Set primary and secondary resolvers manually, or leave blank for automatic DNS."),
+            14f, MUTED,
+        ), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { leftMargin = dp(48); topMargin = dp(-4); bottomMargin = dp(16) })
+
+        sheet.addView(label(Strings.t("QUICK PRESETS"), 11f, MUTED).apply { letterSpacing = spacing(0.08f) }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = dp(8) })
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val presets = listOf(
+            Strings.t("Automatic") to (null to null),
+            "Cloudflare" to ("1.1.1.1" to "1.0.0.1"),
+            "Google" to ("8.8.8.8" to "8.8.4.4"),
+            "Quad9" to ("9.9.9.9" to "149.112.112.112"),
+            "AdGuard" to ("94.140.14.14" to "94.140.15.15"),
+            Strings.t("Cloudflare Family") to ("1.1.1.2" to "1.0.0.2"),
+            Strings.t("Cloudflare IPv6") to ("2606:4700:4700::1111" to "2606:4700:4700::1001"),
+        )
+        presets.forEachIndexed { index, (name, pair) ->
+            val chip = label(name, 14f, INK, TypefaceStyle.MEDIUM).apply {
+                setPadding(dp(16), dp(10), dp(16), dp(10))
+                background = roundedBackground(SURFACE_VARIANT, 20, SURFACE_VARIANT)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    primaryField.setText(pair.first.orEmpty())
+                    secondaryField.setText(pair.second.orEmpty())
+                }
+            }
+            chips.addView(chip, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { if (index > 0) leftMargin = dp(8) })
+        }
+        sheet.addView(android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        sheet.addView(label(Strings.t("PRIMARY"), 11f, MUTED).apply { letterSpacing = spacing(0.08f) }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(18); bottomMargin = dp(6) })
+        sheet.addView(primaryField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)))
+        sheet.addView(label(Strings.t("SECONDARY"), 11f, MUTED).apply { letterSpacing = spacing(0.08f) }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(14); bottomMargin = dp(6) })
+        sheet.addView(secondaryField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)))
+
+        val buttons = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        buttons.addView(createSettingsButton(Strings.t("Automatic"), backgroundOverride = SURFACE_VARIANT, textColorOverride = INK) {
+            preferences().edit().remove(DNS_SERVERS).apply()
+            after?.invoke()
+            dialog.dismiss()
+        }, LinearLayout.LayoutParams(0, dp(52), 1f))
+        buttons.addView(createSettingsButton(Strings.t("Save"), backgroundOverride = primary, textColorOverride = primaryContainer) {
+            val primaryValue = primaryField.text.toString().trim()
+            val secondaryValue = secondaryField.text.toString().trim()
+            if (primaryValue.isNotEmpty() && !isValidDnsHost(primaryValue)) {
+                primaryField.error = Strings.t("Enter a valid IPv4 or IPv6 address")
+                return@createSettingsButton
+            }
+            if (secondaryValue.isNotEmpty() && !isValidDnsHost(secondaryValue)) {
+                secondaryField.error = Strings.t("Enter a valid IPv4 or IPv6 address")
+                return@createSettingsButton
+            }
+            val servers = listOf(primaryValue, secondaryValue).filter(String::isNotEmpty)
+            preferences().edit().apply {
+                if (servers.isEmpty()) remove(DNS_SERVERS) else putString(DNS_SERVERS, servers.joinToString(","))
+            }.apply()
+            after?.invoke()
+            dialog.dismiss()
+        }, LinearLayout.LayoutParams(0, dp(52), 1f).apply { leftMargin = dp(10) })
+        sheet.addView(buttons, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { topMargin = dp(18) })
+
+        dialog.setContentView(ScrollView(this).apply {
             setPadding(dp(16), 0, dp(16), dp(16))
             addView(sheet)
         })
@@ -6998,6 +7151,7 @@ class MainActivity : Activity() {
         const val OBFUSCATION_I1 = "obfuscation_i1"
         const val OBFUSCATION_I2 = "obfuscation_i2"
         const val MANUAL_ENDPOINT = "manual_endpoint"
+        const val DNS_SERVERS = "dns_servers"
         const val RETRY_OBFUSCATION = "retry_obfuscation_profiles"
         const val TLS_CURVE_PRESET = "tls_curve_preset"
         const val WIREGUARD_DATA_CHECK = "wireguard_data_check"

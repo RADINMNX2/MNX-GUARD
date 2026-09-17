@@ -5061,18 +5061,11 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
         // carrier-supplied server is filtered out rather than merely appended
         // after. Upstream instead uses 1.1.1.1/1.0.0.1 only as a *fallback* when
         // the config lists nothing, which would let carrier DNS through.
-        val forcedDns = listOf("1.1.1.1", "8.8.8.8")
-        forcedDns.forEach { addDnsServer(InetAddress.getByName(it)) }
-
-        // From upstream v0.8.0: advertise a v6 resolver when the identity has a
-        // v6 address, otherwise v6-only lookups have nowhere to go.
-        if (addresses.ipv6.isNotBlank()) {
-            runCatching { addDnsServer(InetAddress.getByName("2606:4700:4700::1111")) }
-        }
-
-        // Also add any DNS servers from config (for non-Psiphon protocols).
+        // A user-chosen resolver wins: primary/secondary are added first, so an
+        // explicit DNS setting is actually the one the system uses. Carrier DNS
+        // is still never added; the public resolvers below remain as fallbacks.
         val configured = JSONObject(config).optString("dns_servers")
-        configured.split(',', ';', ' ', '\n')
+            .split(',', ';', ' ', '\n')
             .map(String::trim)
             .filter(String::isNotEmpty)
             .mapNotNull { entry ->
@@ -5084,10 +5077,21 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
                 runCatching { InetAddress.getByName(address) }.getOrNull()
             }
             .distinct()
-            .filter { it.hostAddress !in forcedDns }
+        configured.forEach { addDnsServer(it) }
+
+        // Public fallbacks, appended only when they were not chosen explicitly.
+        listOf("1.1.1.1", "8.8.8.8")
+            .map { InetAddress.getByName(it) }
+            .filter { fallback -> configured.none { it.hostAddress == fallback.hostAddress } }
             .forEach { addDnsServer(it) }
 
-        ConnectionLog.record("DNS forced to public resolvers, carrier DNS excluded")
+        // From upstream v0.8.0: advertise a v6 resolver when the identity has a
+        // v6 address, otherwise v6-only lookups have nowhere to go.
+        if (addresses.ipv6.isNotBlank()) {
+            runCatching { addDnsServer(InetAddress.getByName("2606:4700:4700::1111")) }
+        }
+
+        ConnectionLog.record("DNS resolvers applied (custom first, public fallbacks)")
         return this
     }
 }
