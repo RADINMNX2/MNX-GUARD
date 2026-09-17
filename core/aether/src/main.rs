@@ -47,6 +47,11 @@ pub struct StartOptions {
     /// QUIC congestion control algorithm for the MASQUE/HTTP3 transport.
     /// `None` keeps quiche's default (CUBIC). Accepted: "cubic", "reno", "bbr".
     pub cc_algorithm: Option<String>,
+    /// Resolve names over DNS-over-HTTPS instead of plaintext DNS. `None`
+    /// inherits the environment / the built-in default (on).
+    pub doh: Option<bool>,
+    /// DoH endpoint. `None` uses the built-in IP-literial endpoint.
+    pub doh_url: Option<String>,
     pub wireguard_data_check: bool,
     pub tun_fd: Option<i32>,
     pub log_level: Option<String>,
@@ -154,6 +159,16 @@ impl StartOptions {
             masque_transport: MasqueTransport::H3,
             tls_curve_preset: TlsCurvePreset::Chrome,
             cc_algorithm: std::env::var("AETHER_CC")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            doh: std::env::var("AETHER_DOH").ok().map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "off" | "0" | "false" | "no"
+                )
+            }),
+            doh_url: std::env::var("AETHER_DOH_URL")
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
@@ -356,6 +371,12 @@ fn apply_runtime_options(options: &StartOptions) {
     set_optional("AETHER_NOIZE_PARAMETERS", &options.obfuscation_parameters);
 
     set_optional("AETHER_DNS", &options.dns_servers);
+    match options.doh {
+        Some(false) => std::env::set_var("AETHER_DOH", "off"),
+        Some(true) => std::env::set_var("AETHER_DOH", "on"),
+        None => {}
+    }
+    set_optional("AETHER_DOH_URL", &options.doh_url);
     set_optional("AETHER_ROUTE_BLOCK", &options.route_block);
     set_optional("AETHER_ROUTE_DIRECT", &options.route_direct);
     set_optional("AETHER_ROUTES_FILE", &options.routes_file);

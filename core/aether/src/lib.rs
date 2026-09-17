@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod consts;
 mod dns;
+mod doh;
 pub mod error;
 mod exitip;
 pub(crate) mod ffi;

@@ -46,6 +46,9 @@ MASQUE transport:
   --fragment-delay <n|a-b> delay between fragments in ms (default 2-10)
   --cc <algo>              QUIC congestion control: cubic (default), reno, bbr
   --bbr                    shortcut for --cc bbr (BBRv2 from gcongestion)
+  --doh                    resolve names over DNS-over-HTTPS (default on)
+  --no-doh                 use plaintext DNS instead of DNS-over-HTTPS
+  --doh-url <url>          DoH endpoint (default https://1.1.1.1/dns-query)
 
 WireGuard:
   --keepalive <n>          persistent keepalive interval in seconds (default 5)
@@ -158,6 +161,9 @@ pub fn parse_args(args: Vec<String>) -> crate::error::Result<()> {
             "--h2-peer" => set("AETHER_MASQUE_H2_PEER", next_value!()),
             "--cc" => set("AETHER_CC", next_value!()),
             "--bbr" => set("AETHER_CC", "bbr"),
+            "--doh" => set("AETHER_DOH", "on"),
+            "--no-doh" => set("AETHER_DOH", "off"),
+            "--doh-url" => set("AETHER_DOH_URL", next_value!()),
             "--ech" => set("AETHER_ECH", next_value!()),
             "--no-data-check" => {
                 set("AETHER_MASQUE_NO_DATA_CHECK", "1");

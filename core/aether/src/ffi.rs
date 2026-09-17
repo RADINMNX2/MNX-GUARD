@@ -139,6 +139,8 @@ struct NativeStartOptions {
     masque_transport: String,
     tls_curve_preset: String,
     cc_algorithm: Option<String>,
+    doh: Option<bool>,
+    doh_url: Option<String>,
     wireguard_data_check: bool,
     log_level: Option<String>,
     perf_profile: Option<String>,
@@ -182,6 +184,8 @@ impl Default for NativeStartOptions {
             masque_transport: "h3".into(),
             tls_curve_preset: "chrome".into(),
             cc_algorithm: None,
+            doh: None,
+            doh_url: None,
             wireguard_data_check: true,
             log_level: None,
             perf_profile: None,
@@ -232,6 +236,8 @@ impl TryFrom<NativeStartOptions> for StartOptions {
         options.masque_transport = MasqueTransport::parse(&value.masque_transport);
         options.tls_curve_preset = TlsCurvePreset::parse(&value.tls_curve_preset);
         options.cc_algorithm = value.cc_algorithm.filter(|v| !v.trim().is_empty());
+        options.doh = value.doh;
+        options.doh_url = value.doh_url.filter(|v| !v.trim().is_empty());
         options.wireguard_data_check = value.wireguard_data_check;
         options.log_level = value.log_level.filter(|level| !level.trim().is_empty());
         options.perf_profile = value

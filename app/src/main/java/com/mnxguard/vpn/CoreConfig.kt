@@ -175,6 +175,11 @@ object CoreConfig {
             // preference of "cubic" restores the old behaviour. Ignored by the
             // HTTP/2 and WireGuard transports, which do not use QUIC.
             put("cc_algorithm", text("cc_algorithm", "bbr"))
+            // DNS-over-HTTPS, on by default: the core resolves names over HTTPS
+            // so the tunnel endpoint cannot read them either. "off" restores
+            // plaintext DNS; a non-blank `doh_url` overrides the endpoint.
+            put("doh", text("doh", "on") != "off")
+            putOpt("doh_url", text("doh_url").ifBlank { null })
             put("wireguard_data_check", prefs.getBoolean("wireguard_data_check", true))
             put("log_level", text("log_level", "info"))
             put("perf_profile", text("perf_profile", "auto"))
