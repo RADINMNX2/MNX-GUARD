@@ -727,6 +727,10 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
     const val EXTRA_METRICS_RTT_MS = "metrics_rtt_ms"
     const val EXTRA_METRICS_CWND = "metrics_cwnd"
     const val EXTRA_METRICS_LOST_BYTES = "metrics_lost_bytes"
+    // Cumulative transport byte counters, so the UI can derive a loss rate (and
+    // from it the connection score) without a second broadcast channel.
+    const val EXTRA_METRICS_SENT_BYTES = "metrics_sent_bytes"
+    const val EXTRA_METRICS_RECV_BYTES = "metrics_recv_bytes"
         const val EXTRA_NOTIFICATION_IP = "notification_ip"
         const val EXTRA_NOTIFICATION_PING = "notification_ping"
 
@@ -4591,7 +4595,9 @@ class MnxGuardVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel.
             .putExtra(EXTRA_TRAFFIC_MONTH_RX, monthRx)
             .putExtra(EXTRA_METRICS_RTT_MS, metricsRttMs)
             .putExtra(EXTRA_METRICS_CWND, metricsCwnd)
-            .putExtra(EXTRA_METRICS_LOST_BYTES, metricsLostBytes))
+            .putExtra(EXTRA_METRICS_LOST_BYTES, metricsLostBytes)
+            .putExtra(EXTRA_METRICS_SENT_BYTES, metricsSentBytes)
+            .putExtra(EXTRA_METRICS_RECV_BYTES, metricsRecvBytes))
     }
 
     /**

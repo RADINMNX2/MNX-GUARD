@@ -61,6 +61,7 @@ class MainActivity : Activity() {
     private lateinit var connectionDetail: TextView
     private lateinit var chipLatency: TextView
     private lateinit var chipProtocol: TextView
+    private lateinit var chipScore: TextView
     private lateinit var tileDown: MetricTile
     private lateinit var tileUp: MetricTile
     private lateinit var tileSpeed: MetricTile
@@ -294,6 +295,9 @@ class MainActivity : Activity() {
     // shown on the second tile row. 0 until the first sample arrives.
     @Volatile private var coreCwnd = 0L
     @Volatile private var coreLostBytes = 0L
+    // Cumulative transport byte counters, for the loss rate behind the score.
+    @Volatile private var coreSentBytes = 0L
+    @Volatile private var coreRecvBytes = 0L
     /**
      * Connection verification. STATUS_CONNECTED from the service only means
      * "the transport handshake finished" — on MCI/Hamrah-e-Aval a WireGuard
@@ -436,6 +440,8 @@ class MainActivity : Activity() {
                 }
                 coreCwnd = intent.getLongExtra(MnxGuardVpnService.EXTRA_METRICS_CWND, coreCwnd)
                 coreLostBytes = intent.getLongExtra(MnxGuardVpnService.EXTRA_METRICS_LOST_BYTES, coreLostBytes)
+                coreSentBytes = intent.getLongExtra(MnxGuardVpnService.EXTRA_METRICS_SENT_BYTES, coreSentBytes)
+                coreRecvBytes = intent.getLongExtra(MnxGuardVpnService.EXTRA_METRICS_RECV_BYTES, coreRecvBytes)
                 renderTrafficMonitor()
                 renderHomeMetrics()
                 return
@@ -623,6 +629,10 @@ class MainActivity : Activity() {
             setOnClickListener { pingConnection() }
         }
         chipProtocol = label(selectedProtocol.label.uppercase(), 12f, MUTED, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.08f)
+        }
+        chipScore = label(Strings.t("Quality —"), 12f, MUTED, TypefaceStyle.MEDIUM).apply {
             gravity = Gravity.CENTER
             letterSpacing = spacing(0.08f)
         }
@@ -1442,6 +1452,8 @@ class MainActivity : Activity() {
             addView(chipLatency)
             addView(label("  ·  ", 12f, Sculpt.withAlpha(MUTED, 0.5f)))
             addView(chipProtocol)
+            addView(label("  ·  ", 12f, Sculpt.withAlpha(MUTED, 0.5f)))
+            addView(chipScore)
         }
         addView(chipLine, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -6169,6 +6181,10 @@ class MainActivity : Activity() {
         coreRttMs = -1.0
         coreCwnd = 0L
         coreLostBytes = 0L
+        coreSentBytes = 0L
+        coreRecvBytes = 0L
+        chipScore.text = Strings.t("Quality —")
+        chipScore.setTextColor(Sculpt.withAlpha(MUTED, 0.95f))
         exitNodeCard.resetSpark()
     }
 
@@ -6229,6 +6245,37 @@ class MainActivity : Activity() {
             tileLoss.setValue(lossValue, lossUnit)
             tileLoss.push((coreLostBytes / 65_536.0).toFloat().coerceIn(0.04f, 1f))
         }
+
+        // Connection score: one 0-100 read on link health. Latency sets the
+        // ceiling (full marks up to 50 ms), loss subtracts hard because it is
+        // what the user actually feels. Presentation only — no control input.
+        val score = connectionScore()
+        if (score >= 0) {
+            chipScore.text = Strings.tf("Quality %d", score)
+            chipScore.setTextColor(
+                when {
+                    score >= 85 -> palette.connected
+                    score >= 70 -> palette.amberText
+                    score >= 50 -> palette.amber
+                    else -> palette.danger
+                }
+            )
+        }
+    }
+
+    /**
+     * A 0-100 health read from the live transport metrics, or -1 before the
+     * first sample. See [renderHomeMetrics] for the weighting.
+     */
+    private fun connectionScore(): Int {
+        if (coreRttMs <= 0.0) return -1
+        var score = 100.0
+        score -= ((coreRttMs - 50.0) / 3.0).coerceIn(0.0, 45.0)
+        if (coreSentBytes > 0L) {
+            val lossRate = coreLostBytes.toDouble() / coreSentBytes.toDouble()
+            score -= (lossRate * 600.0).coerceIn(0.0, 55.0)
+        }
+        return score.toInt().coerceIn(0, 100)
     }
 
     private fun setModeEnabled(enabled: Boolean) {
