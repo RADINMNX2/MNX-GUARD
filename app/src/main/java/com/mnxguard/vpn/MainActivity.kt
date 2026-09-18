@@ -5809,6 +5809,10 @@ class MainActivity : Activity() {
             connect(config)
             return
         }
+        // VPN mode builds a TUN, and the system allows only one VPN at a time.
+        // If the DNS-only optimizer is holding it, retire it before asking for
+        // consent; otherwise the tunnel would establish into a dead socket.
+        if (OptimizerVpnService.active) stopOptimizer()
         val permissionIntent = VpnService.prepare(this)
         if (permissionIntent == null) connect(config) else {
             pendingConfig = config
@@ -7331,6 +7335,11 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48),
             ))
+            card.addView(label(
+                Strings.t("Applies to the VPN tunnel; in DNS-only mode it is stored and takes effect on the next connect"),
+                12f,
+                MUTED,
+            ).apply { setPadding(0, dp(8), 0, 0) })
             updateTcpTuningToggle()
         })
         val scroll = ScrollView(this).apply {
@@ -7464,13 +7473,28 @@ class MainActivity : Activity() {
         if (OptimizerVpnService.active) startOptimizerService()
     }
 
+    private fun stopOptimizer() {
+        startService(
+            Intent(this, OptimizerVpnService::class.java)
+                .setAction(OptimizerVpnService.ACTION_STOP),
+        )
+        mainRoot.postDelayed({ refreshOptimizerStatus() }, 400)
+    }
+
     private fun toggleOptimizer() {
         if (OptimizerVpnService.active) {
-            startService(
-                Intent(this, OptimizerVpnService::class.java)
-                    .setAction(OptimizerVpnService.ACTION_STOP),
-            )
-            mainRoot.postDelayed({ refreshOptimizerStatus() }, 400)
+            stopOptimizer()
+            return
+        }
+        // Android permits exactly one VPN connection: the DNS-only optimizer
+        // hands the VPN to the system just like the tunnel does. Refuse to take
+        // it from under an established tunnel and tell the user why.
+        if (Tun2SocksManager.isRunning) {
+            toastShort(Strings.t("Stop the VPN tunnel first — one VPN at a time"))
+            if (::optimizerStatus.isInitialized) {
+                optimizerStatus.text = Strings.t("Waiting — the VPN tunnel is using the VPN")
+                optimizerStatus.setTextColor(palette.muted)
+            }
             return
         }
         val consent = VpnService.prepare(this)

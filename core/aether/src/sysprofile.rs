@@ -163,7 +163,16 @@ fn detect_tier(cpus: usize, mem_mb: Option<u64>) -> Tier {
 fn buffer_override(key: &str, fallback: usize) -> usize {
     std::env::var(key)
         .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
+        .map(|value| buffer_value(&value, fallback))
+        .unwrap_or(fallback)
+}
+
+/// Applies the [buffer_override] sanity bounds to a single parsed value.
+fn buffer_value(value: &str, fallback: usize) -> usize {
+    value
+        .trim()
+        .parse::<usize>()
+        .ok()
         .filter(|bytes| (16 * 1024..=64 * 1024 * 1024).contains(bytes))
         .unwrap_or(fallback)
 }
@@ -172,9 +181,34 @@ fn buffer_override(key: &str, fallback: usize) -> usize {
 fn window_override(key: &str, fallback: u64) -> u64 {
     std::env::var(key)
         .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|value| window_value(&value, fallback))
+        .unwrap_or(fallback)
+}
+
+fn window_value(value: &str, fallback: u64) -> u64 {
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
         .filter(|bytes| (64 * 1024..=1024 * 1024 * 1024).contains(bytes))
         .unwrap_or(fallback)
+}
+
+/// Parses a YAML-style `on`/`off`/`0`/`1`/`true`/`false`/`yes`/`no` knob from
+/// the environment, defaulting to [default] when unset or unrecognized.
+fn env_flag(key: &str, default: bool) -> bool {
+    std::env::var(key)
+        .map(|value| flag_value(&value, default))
+        .unwrap_or(default)
+}
+
+/// Applies the [env_flag] grammar to a single value.
+fn flag_value(value: &str, default: bool) -> bool {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "off" | "0" | "false" | "no" => false,
+        "on" | "1" | "true" | "yes" => true,
+        _ => default,
+    }
 }
 
 fn build_tuning() -> Tuning {
@@ -239,14 +273,7 @@ fn build_tuning() -> Tuning {
     };
     let tcp_egress_recv_buf = buffer_override("AETHER_TCP_RECV_BUF", tcp_egress_recv_buf);
     let tcp_egress_send_buf = buffer_override("AETHER_TCP_SEND_BUF", tcp_egress_send_buf);
-    let tcp_tuning = std::env::var("AETHER_TCP_TUNING")
-        .map(|value| {
-            !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "off" | "0" | "false" | "no"
-            )
-        })
-        .unwrap_or(true);
+    let tcp_tuning = env_flag("AETHER_TCP_TUNING", true);
 
     Tuning {
         tier,
@@ -360,4 +387,53 @@ pub fn tcp_egress_send_buf_bytes() -> usize {
 /// Whether egress TCP tuning is enabled (`AETHER_TCP_TUNING`).
 pub fn tcp_tuning_enabled() -> bool {
     tuning().tcp_tuning
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{buffer_value, flag_value, window_value};
+
+    #[test]
+    fn flag_value_accepts_the_full_grammar_case_insensitively() {
+        assert!(flag_value("on", true));
+        assert!(flag_value("1", false));
+        assert!(flag_value("YES", false));
+        assert!(flag_value(" True ", false));
+        assert!(!flag_value("off", true));
+        assert!(!flag_value("0", true));
+        assert!(!flag_value("no", true));
+        assert!(!flag_value("FALSE", true));
+    }
+
+    #[test]
+    fn flag_value_falls_back_on_garbage() {
+        assert!(flag_value("maybe", true));
+        assert!(!flag_value("maybe", false));
+        assert!(flag_value("", true));
+    }
+
+    #[test]
+    fn buffer_value_clamps_outside_the_socket_range() {
+        let fallback = 128 * 1024usize;
+        assert_eq!(buffer_value("65536", fallback), 65536);
+        assert_eq!(buffer_value("4194304", fallback), 4 * 1024 * 1024);
+        // Too small to be useful on any socket.
+        assert_eq!(buffer_value("4096", fallback), fallback);
+        // Beyond the 64 MiB sanity ceiling.
+        assert_eq!(buffer_value("1073741824", fallback), fallback);
+        // Not a number at all.
+        assert_eq!(buffer_value("not a number", fallback), fallback);
+        assert_eq!(buffer_value("", fallback), fallback);
+    }
+
+    #[test]
+    fn window_value_clamps_outside_the_flow_control_range() {
+        let fallback = 8 * 1024 * 1024u64;
+        assert_eq!(window_value("16777216", fallback), 16 * 1024 * 1024);
+        // Below the 64 KiB floor.
+        assert_eq!(window_value("8192", fallback), fallback);
+        // Above the 1 GiB ceiling.
+        assert_eq!(window_value("4294967296", fallback), fallback);
+        assert_eq!(window_value("junk", fallback), fallback);
+    }
 }

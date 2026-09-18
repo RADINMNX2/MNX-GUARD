@@ -7,7 +7,7 @@
 **تونل کامل دستگاه برای شبکه‌های تحت سانسور — پنج مسیر ترابری، هستهٔ Rust، رابط بومی اندروید**
 
 [![Build](https://img.shields.io/github/actions/workflow/status/RADINMNX2/MNX-GUARD/ci.yml?branch=main&style=for-the-badge&label=build)](https://github.com/RADINMNX2/MNX-GUARD/actions)
-[![Version](https://img.shields.io/badge/version-2.0.0-5CE68F?style=for-the-badge)](https://github.com/RADINMNX2/MNX-GUARD/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-5CE68F?style=for-the-badge)](https://github.com/RADINMNX2/MNX-GUARD/releases)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3A4FB0?style=for-the-badge&logo=android&logoColor=white)](https://github.com/RADINMNX2/MNX-GUARD)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-6c5ce7?style=for-the-badge)](LICENSE)
 [![Transports](https://img.shields.io/badge/%D9%85%D8%B3%DB%8C%D8%B1%D9%87%D8%A7-MASQUE%20%C2%B7%20WireGuard%20%C2%B7%20WARP%C2%B7WARP%20%C2%B7%20Psiphon%20%C2%B7%20Tor-1f6f4a?style=for-the-badge)](#مسیرهای-ترابری)
@@ -50,6 +50,9 @@
 | DNS دستی و DoH | انتخاب resolver اول و دوم، و ترجمهٔ رمزنگاری‌شدهٔ DoH به‌جای DNS متن‌باز |
 | داشبورد ترابری زنده | RTT، پنجرهٔ ازدحام، بایت‌های افت‌کرده و دریافتی هسته، و نمرهٔ کیفیت اتصال |
 | تنظیمات ترابری | انتخاب الگوریتم کنترل ازدحام، Pacing و HyStart++ از داخل برنامه |
+| بهینه‌سازی TCP خروج | Nagle خاموش، keepalive، `TCP_USER_TIMEOUT` و بافرهای بزرگ‌تر روی هر اتصال TCP که هسته حمل می‌کند |
+| بهینه‌ساز DNS محلی | تب OPTIMIZER جدا از VPN؛ پاسخ DNS روی کل سیستم بدون گیت‌وی از راه دور |
+| نوار پایین دوتایی | VPN و OPTIMIZER دو تب مستقل‌اند؛ بهینه‌ساز نیازی به تونل ندارد |
 
 ---
 
@@ -66,8 +69,13 @@
 | `AETHER_QUIC_STREAM_WINDOW` | بازنویسی پنجرهٔ استریم QUIC (بایت) | خودکار |
 | `AETHER_DOH` | روشن/خاموش کردن DoH (`off` خاموش می‌کند) | روشن |
 | `AETHER_DOH_URL` | نشانی DoH | `https://1.1.1.1/dns-query` |
+| `AETHER_TCP_TUNING` | روشن/خاموش کردن بهینه‌سازی TCP خروج (Nagle، keepalive، timeout، بافرها) | روشن |
+| `AETHER_TCP_RECV_BUF` | بازنویسی بافر گیرندهٔ سوکت‌های TCP خروج (بایت) | خودکار |
+| `AETHER_TCP_SEND_BUF` | بازنویسی بافر فرستندهٔ سوکت‌های TCP خروج (بایت) | خودکار |
 
 DNS به‌صورت پیش‌فرض از طریق **DoH** و روی یک نشانی IP انجام می‌شود تا به بوت‌استرپ نیاز نباشد و بشود بی‌درنگ به DNS متن‌باز برگشت. resolver دستی (اول و دوم) از تنظیمات برنامه قابل انتخاب است و همیشه بر resolverهای عمومی اولویت دارد.
+
+بهینه‌سازی TCP خروج هم روی همان اصل است: بافرهای سوکت متناسب با پروفایل کارایی دستگاه باز می‌شوند، Nagle خاموش می‌شود تا نوشتن‌های کوچک نگه داشته نشوند، keepalive اتصال‌های بیکار را در برابر NAT اپراتور زنده نگه می‌دارد و `TCP_USER_TIMEOUT` اتصالِ سیاه‌شده را به‌جای آویزان‌ماندن طولانی رها می‌کند. روی اندروید، تغییر رفتار TCP اپ‌های دیگر بدون روت ممکن نیست؛ این ماژول روی اتصالاتی اثر می‌گذارد که خود هسته حمل می‌کند، و کلید آن از تب OPTIMIZER و روی همهٔ سوکت‌های خروج (MASQUE، WireGuard-on-TCP، Tor، Psiphon و مستقیم SOCKS) اعمال می‌شود.
 
 ---
 
