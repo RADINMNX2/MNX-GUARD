@@ -112,6 +112,7 @@ class MainActivity : Activity() {
     private lateinit var qualityLoss: TextView
     private lateinit var dnsBenchmarkList: LinearLayout
     private lateinit var optimizerResolverInput: EditText
+    private lateinit var tcpTuningToggle: TextView
     @Volatile
     private var optimizerTesting = false
     private lateinit var appUpdater: AppUpdater
@@ -4667,6 +4668,17 @@ class MainActivity : Activity() {
 
     private fun hystartEnabled(): Boolean = preferences().getBoolean(HYSTART_ENABLED, true)
 
+    private fun updateTcpTuningToggle() {
+        if (!::tcpTuningToggle.isInitialized) return
+        val on = preferences().getBoolean(TCP_TUNING, true)
+        tcpTuningToggle.text = Strings.t(if (on) "TCP tuning: On" else "TCP tuning: Off")
+        tcpTuningToggle.background = if (on) {
+            roundedBackground(palette.primaryContainer, 18, palette.primary)
+        } else {
+            roundedBackground(palette.surfaceVariant, 18, palette.surfaceVariant)
+        }
+    }
+
     /**
      * The user's chosen DNS resolvers, primary first.
      *
@@ -7301,6 +7313,26 @@ class MainActivity : Activity() {
             ).apply { topMargin = dp(14) })
             refreshDnsBenchmarkRows(emptyMap())
         })
+        content.addView(optimizerCard(
+            Strings.t("TCP tuning"),
+            Strings.t("Nagle off, keepalives and wider buffers on every TCP connection the tunnel carries"),
+        ) { card ->
+            tcpTuningToggle = label("", 15f, INK, TypefaceStyle.MEDIUM).apply {
+                gravity = Gravity.CENTER
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    val next = !preferences().getBoolean(TCP_TUNING, true)
+                    preferences().edit().putBoolean(TCP_TUNING, next).apply()
+                    updateTcpTuningToggle()
+                }
+            }
+            card.addView(tcpTuningToggle, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ))
+            updateTcpTuningToggle()
+        })
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -7781,6 +7813,7 @@ class MainActivity : Activity() {
         const val CC_ALGORITHM = "cc_algorithm"
         const val PACING_ENABLED = "pacing"
         const val HYSTART_ENABLED = "hystart"
+        const val TCP_TUNING = "tcp_tuning"
         const val RETRY_OBFUSCATION = "retry_obfuscation_profiles"
         const val TLS_CURVE_PRESET = "tls_curve_preset"
         const val WIREGUARD_DATA_CHECK = "wireguard_data_check"

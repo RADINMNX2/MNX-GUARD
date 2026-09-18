@@ -56,6 +56,9 @@ pub struct StartOptions {
     pub pacing: Option<bool>,
     /// quiche's HyStart++ slow-start exit. `None` inherits the default (on).
     pub hystart: Option<bool>,
+    /// Egress TCP tuning (Nagle off, keepalives, user timeout, buffers).
+    /// `None` inherits the environment / the default (on).
+    pub tcp_tuning: Option<bool>,
     pub wireguard_data_check: bool,
     pub tun_fd: Option<i32>,
     pub log_level: Option<String>,
@@ -183,6 +186,12 @@ impl StartOptions {
                 )
             }),
             hystart: std::env::var("AETHER_HYSTART").ok().map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "off" | "0" | "false" | "no"
+                )
+            }),
+            tcp_tuning: std::env::var("AETHER_TCP_TUNING").ok().map(|value| {
                 !matches!(
                     value.trim().to_ascii_lowercase().as_str(),
                     "off" | "0" | "false" | "no"
@@ -403,6 +412,11 @@ fn apply_runtime_options(options: &StartOptions) {
     match options.hystart {
         Some(false) => std::env::set_var("AETHER_HYSTART", "off"),
         Some(true) => std::env::remove_var("AETHER_HYSTART"),
+        None => {}
+    }
+    match options.tcp_tuning {
+        Some(false) => std::env::set_var("AETHER_TCP_TUNING", "off"),
+        Some(true) => std::env::remove_var("AETHER_TCP_TUNING"),
         None => {}
     }
     set_optional("AETHER_ROUTE_BLOCK", &options.route_block);

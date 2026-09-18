@@ -24,6 +24,13 @@ pub struct Tuning {
     pub quic_connection_window: u64,
     /// QUIC per-stream flow-control window, bytes.
     pub quic_stream_window: u64,
+    /// Egress TCP receive buffer, bytes (`SO_RCVBUF`), also the ceiling on a
+    /// download the core carries over TCP.
+    pub tcp_egress_recv_buf: usize,
+    /// Egress TCP send buffer, bytes (`SO_SNDBUF`).
+    pub tcp_egress_send_buf: usize,
+    /// Whether the egress TCP tuning module is active (`AETHER_TCP_TUNING`).
+    pub tcp_tuning: bool,
 }
 
 static TUNING: OnceLock<Tuning> = OnceLock::new();
@@ -222,6 +229,25 @@ fn build_tuning() -> Tuning {
         window_override("AETHER_QUIC_CONN_WINDOW", quic_connection_window);
     let quic_stream_window = window_override("AETHER_QUIC_STREAM_WINDOW", quic_stream_window);
 
+    // Egress TCP buffers follow the tier for the same reason as the QUIC
+    // windows: window / round-trip-time is the ceiling on a single connection,
+    // and the ~64 KiB kernel default caps a 150 ms path at well under 0.5 MB/s.
+    let (tcp_egress_recv_buf, tcp_egress_send_buf) = match tier {
+        Tier::Low => (256 * 1024usize, 128 * 1024usize),
+        Tier::Medium => (512 * 1024usize, 256 * 1024usize),
+        Tier::High => (1024 * 1024usize, 512 * 1024usize),
+    };
+    let tcp_egress_recv_buf = buffer_override("AETHER_TCP_RECV_BUF", tcp_egress_recv_buf);
+    let tcp_egress_send_buf = buffer_override("AETHER_TCP_SEND_BUF", tcp_egress_send_buf);
+    let tcp_tuning = std::env::var("AETHER_TCP_TUNING")
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "off" | "0" | "false" | "no"
+            )
+        })
+        .unwrap_or(true);
+
     Tuning {
         tier,
         cpus,
@@ -236,6 +262,9 @@ fn build_tuning() -> Tuning {
         h2_connection_window,
         quic_connection_window,
         quic_stream_window,
+        tcp_egress_recv_buf,
+        tcp_egress_send_buf,
+        tcp_tuning,
     }
 }
 
@@ -267,6 +296,12 @@ pub fn log_summary() {
         t.channel_capacity,
         t.h2_stream_window / 1024,
         t.h2_connection_window / 1024,
+    );
+    log::info!(
+        "[*] egress TCP tuning: {} (buffers={}KB rx/{}KB tx)",
+        if t.tcp_tuning { "on" } else { "off" },
+        t.tcp_egress_recv_buf / 1024,
+        t.tcp_egress_send_buf / 1024,
     );
 }
 
@@ -310,4 +345,19 @@ pub fn quic_connection_window_bytes() -> u64 {
 
 pub fn quic_stream_window_bytes() -> u64 {
     tuning().quic_stream_window
+}
+
+/// Egress TCP receive buffer for `SO_RCVBUF`, in bytes.
+pub fn tcp_egress_recv_buf_bytes() -> usize {
+    tuning().tcp_egress_recv_buf
+}
+
+/// Egress TCP send buffer for `SO_SNDBUF`, in bytes.
+pub fn tcp_egress_send_buf_bytes() -> usize {
+    tuning().tcp_egress_send_buf
+}
+
+/// Whether egress TCP tuning is enabled (`AETHER_TCP_TUNING`).
+pub fn tcp_tuning_enabled() -> bool {
+    tuning().tcp_tuning
 }

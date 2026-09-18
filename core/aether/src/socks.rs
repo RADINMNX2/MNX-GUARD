@@ -643,7 +643,7 @@ async fn handle_direct(mut sock: TcpStream, target: Target, port: u16) -> Result
             }
         };
 
-    let _ = upstream.set_nodelay(true);
+    let _ = crate::tcp_tuning::apply(&upstream);
     reply_bound(&mut sock, "0.0.0.0:0".parse().unwrap()).await?;
 
     let (mut client_rd, mut client_wr) = sock.into_split();

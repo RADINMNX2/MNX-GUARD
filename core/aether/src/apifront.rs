@@ -257,7 +257,7 @@ async fn exchange(
         .await
         .map_err(|_| AetherError::Api(format!("connect to {address} timed out")))?
         .map_err(|e| AetherError::Api(format!("connect to {address}: {e}")))?;
-    tcp.set_nodelay(true).ok();
+        let _ = crate::tcp_tuning::apply(&tcp);
 
     let config = fingerprint.configure()?;
     let stream = FragmentingStream::new(tcp, fingerprint.fragments());

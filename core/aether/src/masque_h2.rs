@@ -297,7 +297,7 @@ pub async fn verify_h2(cfg: &H2TunnelConfig, timeout: Duration) -> Result<Durati
     let attempt = async {
         let tls_config = build_tls(cfg)?;
         let tcp = connect_tcp(cfg.peer).await?;
-        let _ = tcp.set_nodelay(true);
+        let _ = crate::tcp_tuning::apply(&tcp);
         let fragment = FragmentingStream::new(tcp, FragmentConfig::from_env());
         let tls = tokio_boring::connect(tls_config, &cfg.sni, fragment)
             .await
@@ -409,7 +409,7 @@ pub async fn run(
 
     log_or_debug(quiet, format!("[h2] connecting tcp to {}", cfg.peer));
     let tcp = connect_tcp(cfg.peer).await?;
-    let _ = tcp.set_nodelay(true);
+    let _ = crate::tcp_tuning::apply(&tcp);
 
     let frag_cfg = FragmentConfig::from_env();
     if frag_cfg.enabled {

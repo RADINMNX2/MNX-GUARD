@@ -171,7 +171,7 @@ async fn connect_through_socks(upstream: SocketAddr, target: SocketAddr) -> Resu
 
         match tokio::time::timeout(per_try, async {
             let mut stream = TcpStream::connect(upstream).await?;
-            stream.set_nodelay(true).ok();
+            let _ = crate::tcp_tuning::apply(&stream);
             socks5_handshake(&mut stream).await?;
             socks5_connect(&mut stream, target).await?;
             Ok::<TcpStream, AetherError>(stream)

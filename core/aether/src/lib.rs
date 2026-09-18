@@ -22,6 +22,7 @@ mod routing;
 mod socks;
 pub(crate) mod socks_upstream;
 mod sysprofile;
+mod tcp_tuning;
 mod tls;
 mod tun;
 mod tunnelping;

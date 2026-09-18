@@ -182,8 +182,11 @@ object CoreConfig {
             putOpt("doh_url", text("doh_url").ifBlank { null })
             // QUIC transport tuning, both on by default. Pacing smooths send
             // bursts; HyStart++ leaves slow start early to avoid a loss burst.
-            put("pacing", prefs.getBoolean("pacing", true))
-            put("hystart", prefs.getBoolean("hystart", true))
+        put("pacing", prefs.getBoolean("pacing", true))
+        put("hystart", prefs.getBoolean("hystart", true))
+        // Egress TCP tuning: Nagle off, keepalives, user timeout and wider
+        // socket buffers on every TCP connection the core carries.
+        put("tcp_tuning", prefs.getBoolean("tcp_tuning", true))
             put("wireguard_data_check", prefs.getBoolean("wireguard_data_check", true))
             put("log_level", text("log_level", "info"))
             put("perf_profile", text("perf_profile", "auto"))
