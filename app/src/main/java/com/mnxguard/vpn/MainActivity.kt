@@ -68,6 +68,7 @@ class MainActivity : Activity() {
     private lateinit var tileLatency: MetricTile
     private lateinit var tileWindow: MetricTile
     private lateinit var tileLoss: MetricTile
+    private lateinit var tileRx: MetricTile
     private lateinit var exitNodeCard: ExitNodeCard
     private lateinit var chainCard: ChainModeCard
 
@@ -666,6 +667,10 @@ class MainActivity : Activity() {
         tileLoss = MetricTile(
             this, palette, Strings.t("LOST"),
             palette.danger, Sculpt.lighten(palette.danger, 0.30f), palette.dangerText,
+        ) { openTrafficMonitorScreen() }
+        tileRx = MetricTile(
+            this, palette, Strings.t("CORE RX"),
+            palette.violet, Sculpt.lighten(palette.violet, 0.30f), palette.violetText,
         ) { openTrafficMonitorScreen() }
         exitNodeCard = ExitNodeCard(this, palette) { refreshPublicIp() }
         chainCard = ChainModeCard(this, palette) { armed -> setChainArmed(armed) }
@@ -1472,13 +1477,14 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(14) })
 
         // Live transport dashboard: RTT / congestion window / lost bytes, fed by
-        // the core's ~1 Hz metrics event. Same three-across geometry as the row
+        // the core's ~1 Hz metrics event. Same across geometry as the row
         // above so the two read as one grid.
         val metricsTiles = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(tileLatency, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
             addView(tileWindow, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
-            addView(tileLoss, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(tileLoss, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
+            addView(tileRx, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         addView(metricsTiles, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -6223,9 +6229,11 @@ class MainActivity : Activity() {
         tileLatency.setValue("—", "MS")
         tileWindow.setValue("0", "B")
         tileLoss.setValue("0", "B")
+        tileRx.setValue("0", "B")
         tileLatency.resetBars()
         tileWindow.resetBars()
         tileLoss.resetBars()
+        tileRx.resetBars()
         coreRttMs = -1.0
         coreCwnd = 0L
         coreLostBytes = 0L
@@ -6293,6 +6301,10 @@ class MainActivity : Activity() {
             tileLoss.setValue(lossValue, lossUnit)
             tileLoss.push((coreLostBytes / 65_536.0).toFloat().coerceIn(0.04f, 1f))
         }
+
+        val (rxValue, rxUnit) = scaleBytes(coreRecvBytes)
+        tileRx.setValue(rxValue, rxUnit)
+        tileRx.push((coreRecvBytes / 1_048_576.0).toFloat().coerceIn(0.04f, 1f))
 
         // Connection score: one 0-100 read on link health. Latency sets the
         // ceiling (full marks up to 50 ms), loss subtracts hard because it is

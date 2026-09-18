@@ -6,8 +6,8 @@
 
 **تونل کامل دستگاه برای شبکه‌های تحت سانسور — پنج مسیر ترابری، هستهٔ Rust، رابط بومی اندروید**
 
-[![Build](https://img.shields.io/github/actions/workflow/status/RADINMNX2/MNX-GUARD/build.yml?branch=main&style=for-the-badge&label=build)](https://github.com/RADINMNX2/MNX-GUARD/actions)
-[![Version](https://img.shields.io/badge/version-1.7.18-5CE68F?style=for-the-badge)](https://github.com/RADINMNX2/MNX-GUARD/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/RADINMNX2/MNX-GUARD/ci.yml?branch=main&style=for-the-badge&label=build)](https://github.com/RADINMNX2/MNX-GUARD/actions)
+[![Version](https://img.shields.io/badge/version-2.0.0-5CE68F?style=for-the-badge)](https://github.com/RADINMNX2/MNX-GUARD/releases)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3A4FB0?style=for-the-badge&logo=android&logoColor=white)](https://github.com/RADINMNX2/MNX-GUARD)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-6c5ce7?style=for-the-badge)](LICENSE)
 [![Transports](https://img.shields.io/badge/%D9%85%D8%B3%DB%8C%D8%B1%D9%87%D8%A7-MASQUE%20%C2%B7%20WireGuard%20%C2%B7%20WARP%C2%B7WARP%20%C2%B7%20Psiphon%20%C2%B7%20Tor-1f6f4a?style=for-the-badge)](#مسیرهای-ترابری)
@@ -46,6 +46,28 @@
 | قطع‌کن اضطراری | اگر تونل بیفتد، شبکه کامل قطع می‌شود تا ترافیک لو نرود |
 | اجبار DNS | فقط resolver عمومی استفاده می‌شود و DNS اپراتور کامل کنار گذاشته می‌شود |
 | اتصال تأییدشده | دایره تا وقتی ترافیک واقعاً رد نشده باشد، موفقیت اعلام نمی‌کند |
+| کنترل ازدحام BBRv2 | الگوریتم مدل‌محور به‌جای ازدحام مبتنی بر افت، برای شبکه‌های موبایل پرنوسان |
+| DNS دستی و DoH | انتخاب resolver اول و دوم، و ترجمهٔ رمزنگاری‌شدهٔ DoH به‌جای DNS متن‌باز |
+| داشبورد ترابری زنده | RTT، پنجرهٔ ازدحام، بایت‌های افت‌کرده و دریافتی هسته، و نمرهٔ کیفیت اتصال |
+| تنظیمات ترابری | انتخاب الگوریتم کنترل ازدحام، Pacing و HyStart++ از داخل برنامه |
+
+---
+
+## بهینه‌سازی ترابری
+
+هستهٔ QUIC بر پایهٔ بازخورد واقعی شبکه تنظیم می‌شود. کنترل ازدحام به‌صورت پیش‌فرض **BBRv2** است (قابل تغییر به CUBIC یا Reno)، و **Pacing** و **HyStart++** روشن‌اند تا ارسال یکنواخت بماند و از انفجار افت در پایان slow-start جلوگیری شود. پنجرهٔ اتصال و استریم QUIC بر اساس پروفایل کارایی و پلهٔ شبکه تنظیم می‌شوند و با متغیرهای محیطی زیر قابل بازنویسی‌اند:
+
+| متغیر | کارش | پیش‌فرض |
+|---|---|---|
+| `AETHER_CC` | انتخاب الگوریتم کنترل ازدحام (`bbr` / `cubic` / `reno`) | `bbr` |
+| `AETHER_PACING` | روشن/خاموش کردن Pacing ارسال (`off` خاموش می‌کند) | روشن |
+| `AETHER_HYSTART` | روشن/خاموش کردن HyStart++ | روشن |
+| `AETHER_QUIC_CONN_WINDOW` | بازنویسی پنجرهٔ اتصال QUIC (بایت) | خودکار |
+| `AETHER_QUIC_STREAM_WINDOW` | بازنویسی پنجرهٔ استریم QUIC (بایت) | خودکار |
+| `AETHER_DOH` | روشن/خاموش کردن DoH (`off` خاموش می‌کند) | روشن |
+| `AETHER_DOH_URL` | نشانی DoH | `https://1.1.1.1/dns-query` |
+
+DNS به‌صورت پیش‌فرض از طریق **DoH** و روی یک نشانی IP انجام می‌شود تا به بوت‌استرپ نیاز نباشد و بشود بی‌درنگ به DNS متن‌باز برگشت. resolver دستی (اول و دوم) از تنظیمات برنامه قابل انتخاب است و همیشه بر resolverهای عمومی اولویت دارد.
 
 ---
 
