@@ -20,6 +20,10 @@ pub struct Tuning {
     pub channel_capacity: usize,
     pub h2_stream_window: u32,
     pub h2_connection_window: u32,
+    /// QUIC connection-level flow-control window, bytes (`set_initial_max_data`).
+    pub quic_connection_window: u64,
+    /// QUIC per-stream flow-control window, bytes.
+    pub quic_stream_window: u64,
 }
 
 static TUNING: OnceLock<Tuning> = OnceLock::new();
@@ -157,6 +161,15 @@ fn buffer_override(key: &str, fallback: usize) -> usize {
         .unwrap_or(fallback)
 }
 
+/// Same contract as [buffer_override] but for a flow-control window in bytes.
+fn window_override(key: &str, fallback: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|bytes| (64 * 1024..=1024 * 1024 * 1024).contains(bytes))
+        .unwrap_or(fallback)
+}
+
 fn build_tuning() -> Tuning {
     let cpus = detected_cpus();
     let mem_mb = total_mem_mb();
@@ -195,6 +208,20 @@ fn build_tuning() -> Tuning {
         Tier::High => (16 * 1024 * 1024, 32 * 1024 * 1024),
     };
 
+    // QUIC flow control follows the same tier. These windows are the ceiling on
+    // a single stream as window / round-trip-time, so the hardcoded 2 MB they
+    // replace throttled BBR on a long-haul link: 2 MB over 200 ms is 10 MB/s no
+    // matter how much bandwidth the path offers. Env overrides exist for A/B:
+    // AETHER_QUIC_CONN_WINDOW / AETHER_QUIC_STREAM_WINDOW.
+    let (quic_connection_window, quic_stream_window) = match tier {
+        Tier::Low => (10_000_000u64, 2_000_000u64),
+        Tier::Medium => (24_000_000u64, 8_000_000u64),
+        Tier::High => (48_000_000u64, 16_000_000u64),
+    };
+    let quic_connection_window =
+        window_override("AETHER_QUIC_CONN_WINDOW", quic_connection_window);
+    let quic_stream_window = window_override("AETHER_QUIC_STREAM_WINDOW", quic_stream_window);
+
     Tuning {
         tier,
         cpus,
@@ -207,6 +234,8 @@ fn build_tuning() -> Tuning {
         channel_capacity,
         h2_stream_window,
         h2_connection_window,
+        quic_connection_window,
+        quic_stream_window,
     }
 }
 
@@ -273,4 +302,12 @@ pub fn h2_stream_window_bytes() -> u32 {
 
 pub fn h2_connection_window_bytes() -> u32 {
     tuning().h2_connection_window
+}
+
+pub fn quic_connection_window_bytes() -> u64 {
+    tuning().quic_connection_window
+}
+
+pub fn quic_stream_window_bytes() -> u64 {
+    tuning().quic_stream_window
 }

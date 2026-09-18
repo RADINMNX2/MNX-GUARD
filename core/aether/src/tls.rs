@@ -127,6 +127,14 @@ fn announce_once(message: String) {
     }
 }
 
+/// True when an environment flag is set to one of the explicit "off" spellings.
+fn env_flag_off(key: &str) -> bool {
+    matches!(
+        std::env::var(key).ok().as_deref(),
+        Some("0") | Some("off") | Some("false") | Some("no")
+    )
+}
+
 pub fn build_config(params: &TlsParams) -> Result<quiche::Config> {
     let mut builder =
         SslContextBuilder::new(SslMethod::tls()).map_err(|e| AetherError::Tls(e.to_string()))?;
@@ -183,10 +191,19 @@ pub fn build_config(params: &TlsParams) -> Result<quiche::Config> {
     config.set_max_idle_timeout(120_000);
     config.set_max_recv_udp_payload_size(1350);
     config.set_max_send_udp_payload_size(1350);
-    config.set_initial_max_data(10_000_000);
-    config.set_initial_max_stream_data_bidi_local(2_000_000);
-    config.set_initial_max_stream_data_bidi_remote(2_000_000);
-    config.set_initial_max_stream_data_uni(2_000_000);
+    // Flow-control windows are tier-scaled (see sysprofile): the hardcoded
+    // 10 MB / 2 MB pair capped a single stream at window / RTT and left BBR with
+    // nothing to fill on a high-BDP link.
+    config.set_initial_max_data(crate::sysprofile::quic_connection_window_bytes());
+    let stream_window = crate::sysprofile::quic_stream_window_bytes();
+    config.set_initial_max_stream_data_bidi_local(stream_window);
+    config.set_initial_max_stream_data_bidi_remote(stream_window);
+    config.set_initial_max_stream_data_uni(stream_window);
+    // Pacing and HyStart++ are quiche defaults; set them explicitly so a future
+    // quiche default cannot silently disable them. AETHER_PACING=off or
+    // AETHER_HYSTART=off turn each off for A/B runs on a lossy link.
+    config.enable_pacing(!env_flag_off("AETHER_PACING"));
+    config.enable_hystart(!env_flag_off("AETHER_HYSTART"));
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
     config.set_disable_active_migration(true);
