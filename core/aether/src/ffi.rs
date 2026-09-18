@@ -141,6 +141,8 @@ struct NativeStartOptions {
     cc_algorithm: Option<String>,
     doh: Option<bool>,
     doh_url: Option<String>,
+    pacing: Option<bool>,
+    hystart: Option<bool>,
     wireguard_data_check: bool,
     log_level: Option<String>,
     perf_profile: Option<String>,
@@ -186,6 +188,8 @@ impl Default for NativeStartOptions {
             cc_algorithm: None,
             doh: None,
             doh_url: None,
+            pacing: None,
+            hystart: None,
             wireguard_data_check: true,
             log_level: None,
             perf_profile: None,
@@ -238,6 +242,8 @@ impl TryFrom<NativeStartOptions> for StartOptions {
         options.cc_algorithm = value.cc_algorithm.filter(|v| !v.trim().is_empty());
         options.doh = value.doh;
         options.doh_url = value.doh_url.filter(|v| !v.trim().is_empty());
+        options.pacing = value.pacing;
+        options.hystart = value.hystart;
         options.wireguard_data_check = value.wireguard_data_check;
         options.log_level = value.log_level.filter(|level| !level.trim().is_empty());
         options.perf_profile = value

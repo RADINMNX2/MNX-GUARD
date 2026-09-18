@@ -180,6 +180,10 @@ object CoreConfig {
             // plaintext DNS; a non-blank `doh_url` overrides the endpoint.
             put("doh", text("doh", "on") != "off")
             putOpt("doh_url", text("doh_url").ifBlank { null })
+            // QUIC transport tuning, both on by default. Pacing smooths send
+            // bursts; HyStart++ leaves slow start early to avoid a loss burst.
+            put("pacing", prefs.getBoolean("pacing", true))
+            put("hystart", prefs.getBoolean("hystart", true))
             put("wireguard_data_check", prefs.getBoolean("wireguard_data_check", true))
             put("log_level", text("log_level", "info"))
             put("perf_profile", text("perf_profile", "auto"))

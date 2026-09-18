@@ -52,6 +52,10 @@ pub struct StartOptions {
     pub doh: Option<bool>,
     /// DoH endpoint. `None` uses the built-in IP-literial endpoint.
     pub doh_url: Option<String>,
+    /// QUIC send pacing. `None` inherits the environment / the default (on).
+    pub pacing: Option<bool>,
+    /// quiche's HyStart++ slow-start exit. `None` inherits the default (on).
+    pub hystart: Option<bool>,
     pub wireguard_data_check: bool,
     pub tun_fd: Option<i32>,
     pub log_level: Option<String>,
@@ -172,6 +176,18 @@ impl StartOptions {
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
+            pacing: std::env::var("AETHER_PACING").ok().map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "off" | "0" | "false" | "no"
+                )
+            }),
+            hystart: std::env::var("AETHER_HYSTART").ok().map(|value| {
+                !matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "off" | "0" | "false" | "no"
+                )
+            }),
             wireguard_data_check: true,
             tun_fd: None,
             log_level: None,
@@ -377,6 +393,18 @@ fn apply_runtime_options(options: &StartOptions) {
         None => {}
     }
     set_optional("AETHER_DOH_URL", &options.doh_url);
+    // Absent means "default on", so true removes the override and false spells
+    // out the off value tls.rs looks for.
+    match options.pacing {
+        Some(false) => std::env::set_var("AETHER_PACING", "off"),
+        Some(true) => std::env::remove_var("AETHER_PACING"),
+        None => {}
+    }
+    match options.hystart {
+        Some(false) => std::env::set_var("AETHER_HYSTART", "off"),
+        Some(true) => std::env::remove_var("AETHER_HYSTART"),
+        None => {}
+    }
     set_optional("AETHER_ROUTE_BLOCK", &options.route_block);
     set_optional("AETHER_ROUTE_DIRECT", &options.route_direct);
     set_optional("AETHER_ROUTES_FILE", &options.routes_file);

@@ -3621,6 +3621,24 @@ class MainActivity : Activity() {
         // The underlying prefs and the core's env bridge are untouched, so the
         // knobs still exist for the CLI; they are simply no longer surfaced as
         // settings that silently do nothing on this device.
+        content.addView(sectionLabel(Strings.t("TRANSPORT TUNING")), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(26) })
+        lateinit var ccRow: OrbitSettingsRow
+        ccRow = addControl(Strings.t("Congestion control"), ccLabel()) {
+            chooseCongestionControl { ccRow.setValue(ccLabel()) }
+        }
+        lateinit var pacingRow: OrbitSettingsRow
+        pacingRow = addControl(Strings.t("Pacing"), if (pacingEnabled()) Strings.t("On") else Strings.t("Off")) {
+            preferences().edit().putBoolean(PACING_ENABLED, !pacingEnabled()).apply()
+            pacingRow.setValue(if (pacingEnabled()) Strings.t("On") else Strings.t("Off"))
+        }
+        lateinit var hystartRow: OrbitSettingsRow
+        hystartRow = addControl(Strings.t("HyStart++"), if (hystartEnabled()) Strings.t("On") else Strings.t("Off")) {
+            preferences().edit().putBoolean(HYSTART_ENABLED, !hystartEnabled()).apply()
+            hystartRow.setValue(if (hystartEnabled()) Strings.t("On") else Strings.t("Off"))
+        }
+
         content.addView(sectionLabel(Strings.t("ANTI-DPI")), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = dp(26) })
@@ -4568,6 +4586,36 @@ class MainActivity : Activity() {
             setGravity(Gravity.BOTTOM)
         }
     }
+
+    private data class CcOption(val core: String, val label: String, val description: String)
+
+    private val ccOptions = listOf(
+        CcOption("bbr", "BBRv2", "Model-based; recommended on lossy mobile links"),
+        CcOption("cubic", "CUBIC", "Server default; steady, slower to recover from loss"),
+        CcOption("reno", "Reno", "Legacy loss-based; most conservative"),
+    )
+
+    private fun ccAlgorithm(): String =
+        preferences().getString(CC_ALGORITHM, "bbr").orEmpty().ifBlank { "bbr" }
+
+    private fun ccLabel(): String =
+        ccOptions.firstOrNull { it.core == ccAlgorithm() }?.label ?: "BBRv2"
+
+    private fun chooseCongestionControl(after: (() -> Unit)? = null) = showChoiceSheet(
+        title = Strings.t("Congestion control"),
+        subtitle = Strings.t("How the QUIC transport reacts to loss and delay"),
+        options = ccOptions,
+        selected = ccOptions.firstOrNull { it.core == ccAlgorithm() } ?: ccOptions.first(),
+        label = { it.label },
+        description = { it.description },
+    ) { chosen ->
+        preferences().edit().putString(CC_ALGORITHM, chosen.core).apply()
+        after?.invoke()
+    }
+
+    private fun pacingEnabled(): Boolean = preferences().getBoolean(PACING_ENABLED, true)
+
+    private fun hystartEnabled(): Boolean = preferences().getBoolean(HYSTART_ENABLED, true)
 
     /**
      * The user's chosen DNS resolvers, primary first.
@@ -7262,6 +7310,9 @@ class MainActivity : Activity() {
         const val OBFUSCATION_I2 = "obfuscation_i2"
         const val MANUAL_ENDPOINT = "manual_endpoint"
         const val DNS_SERVERS = "dns_servers"
+        const val CC_ALGORITHM = "cc_algorithm"
+        const val PACING_ENABLED = "pacing"
+        const val HYSTART_ENABLED = "hystart"
         const val RETRY_OBFUSCATION = "retry_obfuscation_profiles"
         const val TLS_CURVE_PRESET = "tls_curve_preset"
         const val WIREGUARD_DATA_CHECK = "wireguard_data_check"
