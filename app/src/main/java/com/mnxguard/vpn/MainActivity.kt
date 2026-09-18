@@ -101,6 +101,18 @@ class MainActivity : Activity() {
     private lateinit var statusLed: View
     private lateinit var mainRoot: FrameLayout
     private lateinit var pageHost: FrameLayout
+    private lateinit var optimizerRoot: FrameLayout
+    private lateinit var bottomNav: LinearLayout
+    private lateinit var navVpnTab: TextView
+    private lateinit var navOptimizerTab: TextView
+    private lateinit var optimizerStatus: TextView
+    private lateinit var optimizerToggle: TextView
+    private lateinit var qualityRtt: TextView
+    private lateinit var qualityJitter: TextView
+    private lateinit var qualityLoss: TextView
+    private lateinit var dnsBenchmarkList: LinearLayout
+    @Volatile
+    private var optimizerTesting = false
     private lateinit var appUpdater: AppUpdater
     private var predictiveBackCallback: Any? = null
     private var selectedProtocol = Protocol.WIREGUARD
@@ -760,9 +772,33 @@ class MainActivity : Activity() {
             }
             insets
         }
+        optimizerRoot = createOptimizerRoot().apply { visibility = View.GONE }
+        val homeHost = FrameLayout(this).apply {
+            addView(mainRoot, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            addView(optimizerRoot, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+        }
+        bottomNav = createBottomNav()
+        val homeColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(homeHost, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ))
+            addView(bottomNav, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
         pageHost = FrameLayout(this).apply {
             setBackgroundColor(CANVAS)
-            addView(mainRoot, FrameLayout.LayoutParams(
+            addView(homeColumn, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ))
@@ -880,6 +916,13 @@ class MainActivity : Activity() {
             pendingConfig?.let(::connect)
         } else if (requestCode == VPN_REQUEST) {
             showDisconnected(Strings.t("VPN permission required"))
+        }
+        if (requestCode == OPTIMIZER_VPN_REQUEST) {
+            if (resultCode == RESULT_OK) startOptimizerService() else {
+                toastShort(Strings.t("VPN permission required"))
+            }
+            pendingConfig = null
+            return
         }
         pendingConfig = null
     }
@@ -7148,8 +7191,375 @@ class MainActivity : Activity() {
 
     private enum class TypefaceStyle { REGULAR, MEDIUM }
 
+    // ----------------------------------------------------------------- OPTIMIZER
+    //
+    // A second home, separate from the VPN console. It drives the local DNS
+    // optimizer (OptimizerVpnService) and reports live network quality. Nothing
+    // here routes general traffic: see OptimizerVpnService for why it is a
+    // VpnService that is deliberately not a tunnel.
+
+    private fun createOptimizerRoot(): FrameLayout {
+        val root = FrameLayout(this).apply { setBackgroundColor(CANVAS) }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(28), dp(20), dp(24))
+        }
+        content.addView(label(Strings.t("OPTIMIZER"), 26f, INK, TypefaceStyle.MEDIUM))
+        content.addView(label(
+            Strings.t("DNS and network quality, with no VPN tunnel"),
+            14f,
+            MUTED,
+        ))
+        content.addView(optimizerCard(
+            Strings.t("Local DNS optimizer"),
+            Strings.t("Answers DNS through the fastest resolver, device-wide, with no remote gateway"),
+        ) { card ->
+            optimizerStatus = label("", 13f, MUTED)
+            card.addView(optimizerStatus)
+            optimizerToggle = label(Strings.t("Start"), 15f, INK, TypefaceStyle.MEDIUM).apply {
+                gravity = Gravity.CENTER
+                background = roundedBackground(palette.primaryContainer, 18, palette.primary)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { toggleOptimizer() }
+            }
+            card.addView(optimizerToggle, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { topMargin = dp(12) })
+        })
+        content.addView(optimizerCard(
+            Strings.t("Network quality"),
+            Strings.t("Live round-trip, jitter and loss to a public endpoint"),
+        ) { card ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            qualityRtt = qualityStat(row, Strings.t("RTT"))
+            qualityJitter = qualityStat(row, Strings.t("JITTER"))
+            qualityLoss = qualityStat(row, Strings.t("LOSS"))
+            card.addView(row)
+            val run = label(Strings.t("Run test"), 15f, INK, TypefaceStyle.MEDIUM).apply {
+                gravity = Gravity.CENTER
+                background = roundedBackground(palette.surfaceVariant, 18, palette.surfaceVariant)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { runQualityTest() }
+            }
+            card.addView(run, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(46),
+            ).apply { topMargin = dp(14) })
+        })
+        content.addView(optimizerCard(
+            Strings.t("DNS benchmark"),
+            Strings.t("Measures public resolvers and applies the fastest"),
+        ) { card ->
+            dnsBenchmarkList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            card.addView(dnsBenchmarkList)
+            val run = label(Strings.t("Benchmark"), 15f, INK, TypefaceStyle.MEDIUM).apply {
+                gravity = Gravity.CENTER
+                background = roundedBackground(palette.primaryContainer, 18, palette.primary)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { runDnsBenchmark() }
+            }
+            card.addView(run, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(46),
+            ).apply { topMargin = dp(14) })
+            refreshDnsBenchmarkRows(emptyMap())
+        })
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        scroll.addView(content, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        root.addView(scroll, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        return root
+    }
+
+    private fun optimizerCard(
+        title: String,
+        subtitle: String,
+        setup: (LinearLayout) -> Unit,
+    ): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = roundedBackground(palette.surface, 22, palette.surfaceVariant)
+        }
+        card.addView(label(title, 16f, INK, TypefaceStyle.MEDIUM))
+        card.addView(label(subtitle, 13f, MUTED).apply { setPadding(0, dp(4), 0, dp(12)) })
+        setup(card)
+        card.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(14) }
+        return card
+    }
+
+    private fun qualityStat(parent: LinearLayout, caption: String): TextView {
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        val value = label("—", 20f, INK, TypefaceStyle.MEDIUM).apply { gravity = Gravity.CENTER }
+        column.addView(value)
+        column.addView(label(caption, 11f, MUTED).apply { gravity = Gravity.CENTER })
+        parent.addView(column, LinearLayout.LayoutParams(
+            0,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            1f,
+        ))
+        return value
+    }
+
+    private fun createBottomNav(): LinearLayout {
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(CANVAS)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        navVpnTab = navTab(Strings.t("VPN")) { selectHomeTab(false) }
+        navOptimizerTab = navTab(Strings.t("OPTIMIZER")) { selectHomeTab(true) }
+        bar.addView(navVpnTab, LinearLayout.LayoutParams(0, dp(46), 1f).apply { rightMargin = dp(8) })
+        bar.addView(navOptimizerTab, LinearLayout.LayoutParams(0, dp(46), 1f))
+        bar.setOnApplyWindowInsetsListener { view, insets ->
+            view.setPadding(dp(16), dp(10), dp(16), dp(10) + insets.systemWindowInsetBottom)
+            insets
+        }
+        updateNavSelection(false)
+        return bar
+    }
+
+    private fun navTab(text: String, onClick: () -> Unit): TextView =
+        label(text, 13f, MUTED, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
+
+    private fun updateNavSelection(optimizer: Boolean) {
+        if (!::navVpnTab.isInitialized) return
+        navVpnTab.background = if (optimizer) {
+            roundedBackground(palette.surface, 24, palette.surfaceVariant)
+        } else {
+            roundedBackground(palette.primaryContainer, 24, palette.primary)
+        }
+        navVpnTab.setTextColor(if (optimizer) palette.muted else palette.primary)
+        navOptimizerTab.background = if (optimizer) {
+            roundedBackground(palette.primaryContainer, 24, palette.primary)
+        } else {
+            roundedBackground(palette.surface, 24, palette.surfaceVariant)
+        }
+        navOptimizerTab.setTextColor(if (optimizer) palette.primary else palette.muted)
+    }
+
+    private fun selectHomeTab(optimizer: Boolean) {
+        if (!::optimizerRoot.isInitialized) return
+        mainRoot.visibility = if (optimizer) View.GONE else View.VISIBLE
+        optimizerRoot.visibility = if (optimizer) View.VISIBLE else View.GONE
+        updateNavSelection(optimizer)
+        if (optimizer) {
+            refreshOptimizerStatus()
+            refreshDnsBenchmarkRows(emptyMap())
+        }
+    }
+
+    private fun startOptimizerService() {
+        val resolver = preferences()
+            .getString(OptimizerVpnService.PREF_RESOLVER, "1.1.1.1")
+            .orEmpty()
+            .ifBlank { "1.1.1.1" }
+        startService(
+            Intent(this, OptimizerVpnService::class.java)
+                .setAction(OptimizerVpnService.ACTION_START)
+                .putExtra(OptimizerVpnService.EXTRA_RESOLVER, resolver),
+        )
+        mainRoot.postDelayed({ refreshOptimizerStatus() }, 500)
+    }
+
+    private fun toggleOptimizer() {
+        if (OptimizerVpnService.active) {
+            startService(
+                Intent(this, OptimizerVpnService::class.java)
+                    .setAction(OptimizerVpnService.ACTION_STOP),
+            )
+            mainRoot.postDelayed({ refreshOptimizerStatus() }, 400)
+            return
+        }
+        val consent = VpnService.prepare(this)
+        if (consent == null) startOptimizerService() else startActivityForResult(consent, OPTIMIZER_VPN_REQUEST)
+    }
+
+    private fun refreshOptimizerStatus() {
+        if (!::optimizerStatus.isInitialized) return
+        val active = OptimizerVpnService.active
+        optimizerStatus.text = if (active) {
+            Strings.t("Active — fastest DNS is in use")
+        } else {
+            Strings.t("Idle")
+        }
+        optimizerStatus.setTextColor(if (active) palette.connected else palette.muted)
+        optimizerToggle.text = if (active) Strings.t("Stop") else Strings.t("Start")
+    }
+
+    private fun runQualityTest() {
+        if (optimizerTesting) return
+        optimizerTesting = true
+        qualityRtt.text = "…"
+        qualityJitter.text = "…"
+        qualityLoss.text = "…"
+        qualityLoss.setTextColor(INK)
+        Thread {
+            val samples = ArrayList<Long>()
+            var lost = 0
+            for (index in 0 until 8) {
+                val ms = tcpLatency("1.1.1.1", 443)
+                if (ms < 0) lost++ else samples.add(ms)
+            }
+            val average = if (samples.isEmpty()) -1L else samples.average().toLong()
+            var jitter = 0.0
+            if (samples.size >= 2) {
+                var sum = 0.0
+                for (index in 1 until samples.size) {
+                    sum += kotlin.math.abs(samples[index] - samples[index - 1])
+                }
+                jitter = sum / (samples.size - 1)
+            }
+            val lossPercent = (lost * 100.0 / 8).toInt()
+            runOnUiThread {
+                qualityRtt.text = if (average < 0) "—" else "$average"
+                qualityJitter.text = if (samples.size < 2) "—" else jitter.toInt().toString()
+                qualityLoss.text = "$lossPercent%"
+                qualityLoss.setTextColor(if (lossPercent > 0) palette.danger else palette.connected)
+                optimizerTesting = false
+            }
+        }.start()
+    }
+
+    private fun tcpLatency(host: String, port: Int): Long {
+        val socket = java.net.Socket()
+        return try {
+            val start = System.nanoTime()
+            socket.connect(java.net.InetSocketAddress(host, port), 2000)
+            (System.nanoTime() - start) / 1_000_000
+        } catch (_: Exception) {
+            -1L
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
+
+    private fun optimizerResolvers(): List<Pair<String, String>> = listOf(
+        "Cloudflare" to "1.1.1.1",
+        "Google" to "8.8.8.8",
+        "Quad9" to "9.9.9.9",
+        "AdGuard" to "94.140.14.14",
+    )
+
+    private fun runDnsBenchmark() {
+        if (optimizerTesting) return
+        optimizerTesting = true
+        refreshDnsBenchmarkRows(optimizerResolvers().associate { it.second to -2L })
+        Thread {
+            val results = LinkedHashMap<String, Long>()
+            for ((_, host) in optimizerResolvers()) {
+                results[host] = measureDns(host)
+                val snapshot = LinkedHashMap(results)
+                runOnUiThread { refreshDnsBenchmarkRows(snapshot) }
+            }
+            val fastest = results.entries.filter { it.value >= 0 }.minByOrNull { it.value }
+            runOnUiThread {
+                if (fastest != null) {
+                    preferences().edit()
+                        .putString(OptimizerVpnService.PREF_RESOLVER, fastest.key)
+                        .apply()
+                    toastShort(Strings.t("Fastest DNS applied") + ": " + fastest.key)
+                } else {
+                    toastShort(Strings.t("No resolver answered"))
+                }
+                optimizerTesting = false
+            }
+        }.start()
+    }
+
+    private fun refreshDnsBenchmarkRows(results: Map<String, Long>) {
+        if (!::dnsBenchmarkList.isInitialized) return
+        dnsBenchmarkList.removeAllViews()
+        val best = results.values.filter { it >= 0 }.minOrNull()
+        for ((name, host) in optimizerResolvers()) {
+            val state = results[host]
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(8), 0, dp(8))
+            }
+            row.addView(
+                label(name, 14f, INK, TypefaceStyle.MEDIUM),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            val value = when {
+                state == null -> "—"
+                state == -2L -> "…"
+                state < 0 -> Strings.t("timeout")
+                else -> "$state ms"
+            }
+            val color = if (state != null && state >= 0 && state == best) palette.connected else MUTED
+            row.addView(label(value, 13f, color, TypefaceStyle.MEDIUM))
+            dnsBenchmarkList.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+    }
+
+    private fun measureDns(host: String): Long {
+        val socket = java.net.DatagramSocket()
+        return try {
+            socket.soTimeout = 2000
+            val query = dnsQuery("example.com")
+            val start = System.nanoTime()
+            socket.send(java.net.DatagramPacket(
+                query,
+                query.size,
+                java.net.InetAddress.getByName(host),
+                53,
+            ))
+            val buffer = ByteArray(4096)
+            socket.receive(java.net.DatagramPacket(buffer, buffer.size))
+            (System.nanoTime() - start) / 1_000_000
+        } catch (_: Exception) {
+            -1L
+        } finally {
+            runCatching { socket.close() }
+        }
+    }
+
+    private fun dnsQuery(name: String): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        out.write(byteArrayOf(0x12, 0x34))
+        out.write(byteArrayOf(0x01, 0x00))
+        out.write(byteArrayOf(0, 1, 0, 0, 0, 0, 0, 0))
+        for (part in name.split('.')) {
+            out.write(part.length)
+            out.write(part.toByteArray(Charsets.US_ASCII))
+        }
+        out.write(0)
+        out.write(byteArrayOf(0, 1, 0, 1))
+        return out.toByteArray()
+    }
+
     private companion object {
         const val VPN_REQUEST = 100
+        const val OPTIMIZER_VPN_REQUEST = 101
         const val NOTIFICATION_PERMISSION_REQUEST = 101
         const val BACKUP_EXPORT_REQUEST = 102
         const val BACKUP_IMPORT_REQUEST = 103

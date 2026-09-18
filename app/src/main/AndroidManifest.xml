@@ -103,6 +103,24 @@
        </service>
 
         <service
+            android:name=".OptimizerVpnService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <!--
+              The local DNS optimizer. It builds a TUN (so it needs the VPN
+              service permission) but installs no default route and no gateway:
+              the only route is its own resolver /32.
+            -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="dns_optimizer" />
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".MnxGuardTileService"
             android:icon="@drawable/ic_notification"
             android:label="@string/vpn_tile_label"
