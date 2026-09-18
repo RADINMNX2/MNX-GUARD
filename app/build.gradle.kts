@@ -110,6 +110,17 @@ android {
             isShrinkResources = false
             isDebuggable = false
         }
+    } else {
+        // No keystore supplied — CI has no signing secrets configured. Fall back
+        // to the debug signing config so the release variant still yields an
+        // installable APK instead of failing at packageRelease. Supply
+        // -PaetheryKeystore=... plus the AETHERY_KEY* env vars to sign properly.
+        buildTypes.named("release") {
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
+            isDebuggable = false
+        }
     }
 }
 

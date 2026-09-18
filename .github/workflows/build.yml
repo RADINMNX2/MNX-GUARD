@@ -32,19 +32,25 @@ jobs:
           cargo install cargo-ndk
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Setup signing keystore
+      - name: Setup signing keystore (optional)
         env:
           AETHERY_KEYSTORE_BASE64: ${{ secrets.AETHERY_KEYSTORE_BASE64 }}
           AETHERY_KEYSTORE_PASSWORD: ${{ secrets.AETHERY_KEYSTORE_PASSWORD }}
           AETHERY_KEY_ALIAS: ${{ secrets.AETHERY_KEY_ALIAS }}
           AETHERY_KEY_PASSWORD: ${{ secrets.AETHERY_KEY_PASSWORD }}
         run: |
-          echo "$AETHERY_KEYSTORE_BASE64" | base64 -d > release.keystore
-          cat > keystore.env <<EOF
+          if [ -n "$AETHERY_KEYSTORE_BASE64" ]; then
+            echo "$AETHERY_KEYSTORE_BASE64" | base64 -d > release.keystore
+            cat > keystore.env <<EOF
           storePassword=$AETHERY_KEYSTORE_PASSWORD
           keyAlias=$AETHERY_KEY_ALIAS
           keyPassword=$AETHERY_KEY_PASSWORD
           EOF
+            echo "AETHERY_SIGNED=1" >> $GITHUB_ENV
+          else
+            echo "No keystore secret found — the release APK will be debug-signed."
+            echo "AETHERY_SIGNED=0" >> $GITHUB_ENV
+          fi
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -54,7 +60,12 @@ jobs:
           AETHERY_KEYSTORE_PASSWORD: ${{ secrets.AETHERY_KEYSTORE_PASSWORD }}
           AETHERY_KEY_ALIAS: ${{ secrets.AETHERY_KEY_ALIAS }}
           AETHERY_KEY_PASSWORD: ${{ secrets.AETHERY_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease -PaetheryKeystore=release.keystore
+        run: |
+          if [ "$AETHERY_SIGNED" = "1" ]; then
+            ./gradlew assembleRelease -PaetheryKeystore=release.keystore
+          else
+            ./gradlew assembleRelease
+          fi
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
