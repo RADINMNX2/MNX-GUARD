@@ -111,6 +111,7 @@ class MainActivity : Activity() {
     private lateinit var qualityJitter: TextView
     private lateinit var qualityLoss: TextView
     private lateinit var dnsBenchmarkList: LinearLayout
+    private lateinit var optimizerResolverInput: EditText
     @Volatile
     private var optimizerTesting = false
     private lateinit var appUpdater: AppUpdater
@@ -7216,6 +7217,38 @@ class MainActivity : Activity() {
         ) { card ->
             optimizerStatus = label("", 13f, MUTED)
             card.addView(optimizerStatus)
+            val inputRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            optimizerResolverInput = EditText(this).apply {
+                hint = Strings.t("Custom resolver, e.g. 1.1.1.1")
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                setSingleLine(true)
+                textSize = 14f
+                setTextColor(INK)
+                setHintTextColor(MUTED)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = roundedBackground(palette.surfaceVariant, 14, palette.surfaceVariant)
+                setText(preferences().getString(OptimizerVpnService.PREF_RESOLVER, "1.1.1.1").orEmpty())
+            }
+            inputRow.addView(optimizerResolverInput, LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ).apply { rightMargin = dp(8) })
+            val apply = label(Strings.t("Apply"), 14f, INK, TypefaceStyle.MEDIUM).apply {
+                gravity = Gravity.CENTER
+                background = roundedBackground(palette.surfaceVariant, 14, palette.surfaceVariant)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { applyManualResolver() }
+            }
+            inputRow.addView(apply, LinearLayout.LayoutParams(dp(78), dp(44)))
+            card.addView(inputRow, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) })
             optimizerToggle = label(Strings.t("Start"), 15f, INK, TypefaceStyle.MEDIUM).apply {
                 gravity = Gravity.CENTER
                 background = roundedBackground(palette.primaryContainer, 18, palette.primary)
@@ -7384,6 +7417,19 @@ class MainActivity : Activity() {
                 .putExtra(OptimizerVpnService.EXTRA_RESOLVER, resolver),
         )
         mainRoot.postDelayed({ refreshOptimizerStatus() }, 500)
+    }
+
+    private fun applyManualResolver() {
+        if (!::optimizerResolverInput.isInitialized) return
+        val value = optimizerResolverInput.text.toString().trim()
+        if (!isValidDnsHost(value)) {
+            toastShort(Strings.t("Enter a valid IP address"))
+            return
+        }
+        preferences().edit().putString(OptimizerVpnService.PREF_RESOLVER, value).apply()
+        toastShort(Strings.t("Resolver saved") + ": " + value)
+        // A live optimizer holds the old resolver, so restart it with the new one.
+        if (OptimizerVpnService.active) startOptimizerService()
     }
 
     private fun toggleOptimizer() {
